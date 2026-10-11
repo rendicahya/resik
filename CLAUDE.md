@@ -66,6 +66,25 @@ resik/
 
 This is a guideline, not a requirement to reorganize an existing working codebase without reason.
 
+### Current layout
+
+- `src/Resik/Resik.ps1`: entry point. It has no param block; it dot-sources an explicit, ordered list of files and passes `$args` to `Invoke-ResikCli`. When adding a source file, add it to this list and to `tests/TestSetup.ps1`.
+- `src/Resik/Core/`: `Models.ps1` (targets, results), `Arguments.ps1` (option parsing), `Selection.ps1` (`--all`/`--only`), `Analysis.ps1` (isolated, non-destructive analysis), `NativeCommand.ps1` (the shared runner from section 6), `FileSystem.ps1` (read-only path safety checks, size and free-space measurement), `Cleanup.ps1` (isolated cleanup), `Catalog.ps1` (registered targets), `Cli.ps1` (version, help, confirmation, orchestration, exit codes).
+- `src/Resik/DeveloperCleanup/`: one file per tool, each with a header comment stating the commands used and the version they were verified against. `Uv.ps1` (`uv`), `Pip.ps1` (`pip`), `Npm.ps1` (`npm`), `Scoop.ps1` (`scoop-apps`, `scoop-cache`), `Chocolatey.ps1` (`choco`), `NuGet.ps1` (`nuget`, verified against Microsoft's documentation only, because no .NET SDK was available), `Conda.ps1` (`conda`, verified against conda's documentation and source only, because conda was not installed), `HuggingFace.ps1` (`huggingface`), `Playwright.ps1` (`playwright`), and the analysis-only `Gradle.ps1`, `Maven.ps1`, and `JetBrains.ps1`. WinGet is unsupported because it has no cache-cleaning command.
+- `src/Resik/Reporting/ConsoleReport.ps1`: console summaries, returned as strings so they are testable.
+- `tools/Build-Release.ps1`: builds the release archive. `docs/RELEASING.md`: the release and Scoop procedure.
+- `src/Resik/UI/TargetPicker.ps1`: the interactive picker. State (`New-ResikPickerState`), key handling (`Invoke-ResikPickerKey`), and screen text (`Format-ResikPickerScreen`) are pure functions; only `Show-ResikTargetPicker`, `Read-ResikPickerKey`, and the small console wrappers touch the console, so tests mock those.
+- `src/Resik/UI/Spinner.ps1`: the progress spinner (`Start-ResikSpinner`, `Set-ResikSpinnerMessage`, `Stop-ResikSpinner`). It draws from a separate runspace, so it keeps moving while the main thread is blocked by a native command or a size measurement. `Invoke-ResikAnalysisWithSpinner` (`Cli.ps1`) shows it during analysis with the current target's name, and `Invoke-ResikMeasuredCommand` shows it while measuring and while the clean command runs.
+- `WindowsCleanup/` is created when its first file is added.
+
+A target is created with `New-ResikTarget` and has `Detect`, `Analyze`, and an optional `Clean` scriptblock (without `Clean` it is analysis-only). `Clean` must re-resolve and re-validate what it removes rather than trust the earlier analysis, and returns `Status`, `Details`, `MeasuredBytes`, and `FreeSpaceChangeBytes`. Register it in `Get-ResikTargetCatalog` and list it in the help text's `Targets:` section.
+
+The uv target shows the pattern for tool-managed caches: ask the tool for its cache location, validate it with `Get-ResikPathSafetyIssue` plus a tool-specific marker (uv's `CACHEDIR.TAG`), then pass the validated path back to the tool's own clean command (`--cache-dir`), so the tool cleans exactly what was checked. Run the clean command through `Invoke-ResikMeasuredCommand` (`Core/Cleanup.ps1`), which measures the given folders and free space before and after and classifies the result. Measure only what the command actually removes (pip: `http`, `http-v2`, `wheels`; npm: `_cacache`). When a tool reports neither a location nor a size (Chocolatey), leave the estimate and measurements `$null` rather than guessing a path. When a tool has a JSON preview, prefer it over parsing text (`conda clean --dry-run --json`, `hf cache prune --dry-run --format json`); hf's default output changes when it thinks an AI agent runs it, so always pass `--format json`. Paths read from environment variables or configuration files go through `Expand-ResikConfiguredPath` and then `Get-ResikPathSafetyIssue`.
+
+A target without a documented, safe cleanup command (Gradle, Maven, JetBrains) is analysis-only: it has no `Clean`, its analysis reports the size and says how to clean it by hand, and `Format-ResikSummary -Targets` leaves it out of the reclaimable total. Do not add filesystem deletion to such a target without first designing and reviewing a shared, reparse-point-safe deletion helper; Resik has none yet, and Windows PowerShell 5.1's `Remove-Item -Recurse` can follow junctions.
+
+Functions take their dependencies as parameters (for example, `Invoke-ResikCli -Targets`) rather than reading global state, so tests can inject fake targets.
+
 ### Module responsibilities
 
 - **Core:** target registration, orchestration, path validation, shared result models, and error handling.
@@ -229,8 +248,8 @@ scoop cache rm *
 - Do not remove installed applications.
 - Make the scope and consequences clear to the user before execution.
 - Use an analysis or preview mechanism only if Scoop actually supports one for the relevant operation.
-- Do not execute these commands during `-DryRun`.
-- Do not assume that `-DryRun` is supported by these Scoop commands.
+- Do not execute these commands during `--dry-run`.
+- Do not assume that these Scoop commands support a dry-run or preview option.
 
 When executing native commands, capture the exit code and diagnostic output. If one command fails, report the failure and handle the other operation according to the user's selected targets and the safety policy.
 
@@ -369,46 +388,50 @@ An environment variable is not proof that a path is safe.
 - Do not change PowerShell execution policy or modify PATH.
 - Require clear confirmation for destructive operations.
 - Explain the selected target and consequences before confirmation.
-- `-Force` may bypass only explicitly documented confirmation prompts.
-- `-Force` must never bypass path validation, target restrictions, safety checks, or unsupported-operation checks.
+- `--force` may bypass only explicitly documented confirmation prompts.
+- `--force` must never bypass path validation, target restrictions, safety checks, or unsupported-operation checks.
 
 ## 8. CLI Requirements
 
-The CLI command is `resik`. All Resik CLI flags must use lowercase names consistently in the implementation, help output, documentation, examples, and tests.
+The CLI command is `resik`. Resik uses GNU-style options: a double-dash long form for every option, plus a single-letter short form for common ones. All option names are lowercase and case-sensitive, consistently in the implementation, help output, documentation, examples, and tests.
 
 Use these command examples:
 
 ```powershell
-resik -help
-resik -version
+resik --help
+resik --version
 resik
-resik -dryrun
-resik -all
-resik -only uv,pip,scoop
-resik -noninteractive -all -dryrun
-resik -reportpath .\resik-report.json
+resik --dry-run
+resik --all
+resik --only uv,pip,scoop
+resik --non-interactive --all --dry-run
+resik --report-path .\resik-report.json
 ```
 
-### Parameters
+### Options
 
-- `-help`: Show usage and supported options.
-- `-version`: Show the application version.
-- `-dryrun`: Analyze selected targets without performing cleanup.
-- `-all`: Select all supported, eligible cleanup targets.
-- `-only`: Select specific target IDs.
-- `-noninteractive`: Disable interactive prompts and require explicit selection where needed.
-- `-reportpath`: Write an optional JSON report to the specified path.
-- `-force`: Bypass only explicitly documented confirmation prompts. Never bypass safety checks.
+- `-h`, `--help`: Show usage and supported options.
+- `-v`, `--version`: Show the application version.
+- `-n`, `--dry-run`: Analyze selected targets without performing cleanup.
+- `-a`, `--all`: Select all supported, eligible cleanup targets.
+- `-o`, `--only <ids>`: Select specific target IDs.
+- `--non-interactive`: Disable interactive prompts and require explicit selection where needed.
+- `--report-path <path>`: Write an optional JSON report to the specified path.
+- `-f`, `--force`: Bypass only explicitly documented confirmation prompts. Never bypass safety checks.
 
-All flag names must remain lowercase in user-facing output. Do not use PascalCase variants such as `-DryRun` or `-NonInteractive` in examples or documentation.
+Value options accept `--only uv,pip`, `--only=uv,pip`, and `-o uv,pip`. Short options cannot be bundled (`-na` is an error). Single-dash long forms such as `-dryrun` and differently cased forms such as `--Help` are rejected with a suggestion of the correct spelling.
 
-Use consistent parameter handling in PowerShell. Account for PowerShell's case-insensitive parameter matching, but standardize all documented and generated command examples on lowercase flags.
+PowerShell's parameter binder cannot declare `--name` options, so `Resik.ps1` has no param block and parses `$args` itself (`Core/Arguments.ps1`). `Get-ResikOptionSpec` is the single source of truth for option names. Parsing must behave identically when invoked in-process (Scoop's `.ps1` shim; PowerShell turns `uv,pip` into an array and splits `--only=uv,pip` at the comma) and through `powershell -File` (Scoop's `.cmd` shim). PowerShell consumes a bare `--` before the script sees it, so do not rely on `--` as an end-of-options marker.
 
 Validate incompatible arguments and unknown target IDs. Display actionable errors instead of silently ignoring invalid input.
 
+### Cleanup confirmation
+
+Without `--dry-run`, Resik analyzes the selected targets, prints the cleanup plan (`Format-ResikCleanupPlan`), and asks `Clean these targets? [y/N]` (`Read-ResikConfirmation`). That is the only prompt `--force` skips. With `--non-interactive`, or when `Test-ResikInteractiveInput` is false (redirected input), cleanup without `--force` exits `2` before anything is cleaned. Only targets whose analysis returned `AnalysisOnly` and that have `Clean` are cleaned. A declined prompt exits `0`; a `Failed` or `PartialSuccess` cleanup exits `1`.
+
 ### Dry-run guarantees
 
-`-dryrun` must never execute a destructive cleanup operation.
+`--dry-run` must never execute a destructive cleanup operation.
 
 For native tools:
 
@@ -431,6 +454,14 @@ Provide keyboard-driven selection:
 Show the target name, category, availability, risk level, and estimated reclaimable space when available.
 
 If interactive terminal features are unavailable, use a numbered-list fallback or require explicit non-interactive arguments.
+
+### Progress display
+
+Any step that can take more than a moment (analysis, measuring a cache, waiting for a tool's clean command) shows a spinner with a message naming the current step and its elapsed seconds. It is shown only when `Test-ResikSpinnerSupported` is true: a `ConsoleHost`, output not redirected, a readable window width, and `FullLanguage` mode. Otherwise `Start-ResikSpinner` returns `$null` and the other spinner functions do nothing, so redirected output and logs never contain spinner frames. The spinner never replaces the plain lines that say what is happening (`Analyzing targets...`, `Running: <command>`); those still appear in logs.
+
+### Interactive picker flow
+
+Without `--all` or `--only` (for example bare `resik`, `resik --dry-run`, or `resik --force`), Resik analyzes every target and opens the picker (`Invoke-ResikInteractiveRun`). Only targets whose analysis returned `AnalysisOnly` and that have `Clean` can be selected; others are shown as `[-]` with the reason. Nothing is preselected. `Get-ResikPickerMode` chooses `Keys` (the full picker, in a console host), `Numbered` (typed numbers, for hosts without key input), or `None` (redirected input), in which case Resik exits `2` before analyzing. A picked selection still goes through the cleanup confirmation below. `--non-interactive` without a selection is a usage error.
 
 ## 9. Result Model and Reporting
 
@@ -456,7 +487,7 @@ Never label estimates as actual reclaimed space.
 
 ### JSON reports
 
-When `-ReportPath` is specified:
+When `--report-path` is specified:
 
 - Produce valid JSON with a documented schema.
 - Include application version, timestamp, selected targets, statuses, and measurements where available.
@@ -504,6 +535,15 @@ Add GitHub Actions CI for automated tests and static checks. CI must not perform
 
 Never claim a test passed unless it was executed and its results inspected.
 
+### Test conventions
+
+- Tests require Pester 5. Windows ships Pester 3.4, whose syntax is incompatible; import Pester 5 explicitly (`Import-Module Pester -MinimumVersion 5.5.0`).
+- Every test file dot-sources `tests/TestSetup.ps1` in `BeforeAll`. It loads the same source files as `Resik.ps1`, enables the same strict mode, and provides `New-TestTarget` for fake targets.
+- CLI behavior that depends on how arguments arrive must also be tested end to end, by running `Resik.ps1` in a child process both with `-File` and in-process with `&`, matching Scoop's two shims.
+- Assert exact error messages where a wildcard could hide a missing value. In `-like` patterns, `?` and `*` are wildcards.
+- `Cli.Tests.ps1` checks that every `resik ...` example in `README.md`, `docs/RELEASING.md`, and the help text uses only real options. Keep examples on lines that start with `resik`.
+- CI (`.github/workflows/ci.yml`) runs PSScriptAnalyzer with `PSScriptAnalyzerSettings.psd1` and the Pester suite on both Windows PowerShell 5.1 and PowerShell 7.
+
 ## 11. PowerShell Quality Standards
 
 - Use explicit, maintainable PowerShell code.
@@ -516,6 +556,24 @@ Never claim a test passed unless it was executed and its results inspected.
 - Make encoding and JSON serialization explicit.
 - Preserve useful errors without leaking secrets.
 - Use PSScriptAnalyzer or suitable static analysis tools when available.
+
+### Project conventions and known pitfalls
+
+- Windows PowerShell 5.1 is the baseline; PowerShell 7 must also work. Keep source files ASCII, because 5.1 misreads UTF-8 files without a BOM.
+- `Resik.ps1` runs under `Set-StrictMode -Version 3.0` and `$ErrorActionPreference = 'Stop'`. Code must not read unset variables or missing properties. Use `Get-ResikOptionalProperty` for properties that may be absent.
+- `?` is a valid variable-name character, so `"$name?"` reads a variable named `name?`. Write `"${name}?"`.
+- Functions that return collections emit their items normally (no leading `,`). Callers wrap the call in `@()` when they need an array. Mixing the two styles produces nested arrays.
+- Inside `@( ... )`, each newline-separated `@(...)` row is unrolled into the outer array. Build tables of records with objects or a constructor function instead.
+- Raise command-line usage errors as `System.ArgumentException`; `Invoke-ResikCli` reports them without a stack trace. Exit codes: `0` success, `1` a target failed or an unexpected error occurred, `2` invalid or unsupported usage.
+- A scriptblock made with `.GetNewClosure()` runs in its own module scope and cannot see `$script:` variables. Capture what it needs in local variables first. For the same reason, source files define no script-level variables; keep constants inside functions.
+- Run external tools only through `Invoke-ResikNativeCommand` with a path from `Resolve-ResikExecutable`. Never use `&`, `Start-Process`, or string-built command lines for tools. Prefer `.exe`. Tools that ship only as batch files (Scoop, npm) use `-Extension '.cmd'`; because `cmd.exe` re-parses their arguments, the runner refuses any argument that is not a plain token (`Test-ResikBatchArgument`: no spaces, quotes, or `& | < > ^ % ! ( )`), so never pass paths to them. On timeout or Ctrl+C the runner stops the whole process tree, since a `.cmd` starts further processes.
+- A function that returns a one-item array returns the item itself (PowerShell unrolls it), so code that reads JSON arrays through helpers such as `Get-ResikOptionalProperty` must also accept a single string.
+- In a Pester `-ParameterFilter`, a parameter the caller did not pass is `$null`, not its default value. Filter on `$Extension -ne '.cmd'` rather than `$Extension -eq '.exe'`.
+- Never run the `python.exe` in `%LOCALAPPDATA%\Microsoft\WindowsApps` unless a Store Python is installed (`Test-ResikWindowsAppsPythonStub`); it is a stub that opens the Microsoft Store.
+- Nothing may write to the console while a spinner is running; the two would garble the line. Start it after printing, change its text with `Set-ResikSpinnerMessage`, and call `Stop-ResikSpinner` in a `finally` block (it clears the line and restores the cursor, and is safe with `$null` or when called twice), so an error or Ctrl+C never leaves it drawing in the user's session. The spinner's runspace has no Resik functions and no cmdlets: its script (`Get-ResikSpinnerScript`) uses .NET calls only, and it gets an empty session state with `FullLanguage`, which is why it is never started unless Resik itself runs in `FullLanguage`. Its frames are ASCII (`| / - \`) because Windows PowerShell 5.1 consoles often use a code page without Unicode symbols.
+- `tests/TestSetup.ps1` redefines `Test-ResikSpinnerSupported` to return `$false`, so tests run in a real console never draw. `Spinner.Tests.ps1` reloads `Spinner.ps1` to test the real functions.
+- Tests that start `Resik.ps1` in a child process pipe `n` to its standard input (`Invoke-ResikProcess`), so a child can never be confirmed into real cleanup. Tests that run a real tool's clean command must first assert that the tool points at a `TestDrive` path.
+- Factory functions such as `New-ResikTarget` suppress `PSUseShouldProcessForStateChangingFunctions` individually with a justification. Do not disable that rule globally; it must stay active for cleanup code. `PSAvoidUsingWriteHost` is disabled globally because Resik is a console tool.
 
 ## 12. GitHub Flow
 
@@ -568,6 +626,16 @@ For releases:
 - Never clean user caches during installation, updating, or uninstallation.
 - Do not modify the Scoop bucket automatically without explicit authorization and verified release information.
 - Do not require Git to be installed on end-user machines.
+
+### Release mechanics
+
+Follow `docs/RELEASING.md`. In short:
+
+- The version lives only in `Get-ResikVersion` (`src/Resik/Core/Cli.ps1`). Tag releases as `v<version>`.
+- `tools/Build-Release.ps1` writes `dist/resik-<version>.zip` (Git-ignored), with the contents of `src/Resik` (`Resik.ps1` and every subfolder), `LICENSE`, and `README.md` at the archive root. It refuses pre-release versions and existing archives.
+- Zip archives embed timestamps, so builds are not byte-for-byte reproducible. Put into the manifest the SHA-256 of the asset downloaded from the published GitHub Release, never the hash of a local rebuild.
+- Users add the bucket as `personal`. The manifest is `bucket/resik.json` and exposes the command with `"bin": [["Resik.ps1", "resik"]]`. Scoop then creates a `.ps1` shim (runs Resik in-process) and a `.cmd` shim (runs `powershell -File`), so option parsing must work both ways.
+- Test a manifest with `scoop install .\bucket\resik.json` before it is merged into the bucket.
 
 ## 14. Documentation
 

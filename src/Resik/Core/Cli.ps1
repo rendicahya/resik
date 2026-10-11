@@ -1,0 +1,278 @@
+# Command-line handling for Resik.
+#
+# Exit codes:
+#   0  Success (including --help and --version).
+#   1  One or more targets failed, or an unexpected error occurred.
+#   2  Invalid or unsupported command-line usage.
+
+function Get-ResikVersion {
+    '0.1.0'
+}
+
+function Get-ResikHelpText {
+    $optionLines = foreach ($option in (Get-ResikOptionSpec)) {
+        $names = if ($option.Short) { "$($option.Short), $($option.Long)" } else { "    $($option.Long)" }
+        if ($option.ValueName) { $names += " $($option.ValueName)" }
+        '  {0,-26}{1}' -f $names, $option.Description
+    }
+    $targetLines = foreach ($target in @(Get-ResikTargetCatalog)) {
+        '  {0,-14}{1}' -f $target.Id, $target.Name
+    }
+
+    @"
+Resik $(Get-ResikVersion) - safe cleanup for Windows and developer-tool caches.
+
+Usage:
+  resik
+  resik --dry-run
+  resik --dry-run --all
+  resik --only <id>[,<id>...]
+  resik --non-interactive --force --only <id>[,<id>...]
+
+Without --all or --only, Resik analyzes every target and shows a list to pick
+from: Up/Down move, Space selects, A selects all, N selects none, Enter
+confirms, Q or Esc cancels.
+
+Options:
+$($optionLines -join [Environment]::NewLine)
+
+Targets:
+$($targetLines -join [Environment]::NewLine)
+
+Before cleaning, Resik shows what will be removed and asks
+"Clean these targets? [y/N]". --force skips only that question. With
+--non-interactive, or when input is redirected, cleanup requires --force.
+"@
+}
+
+function Write-ResikError {
+    param([string] $Message)
+    [Console]::Error.WriteLine("resik: $Message")
+}
+
+function Invoke-ResikCli {
+    <#
+    .SYNOPSIS
+        Runs Resik with raw command-line arguments and returns an exit code.
+    .DESCRIPTION
+        Targets is injected so the CLI can be tested against fake targets.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [AllowEmptyCollection()]
+        [AllowNull()]
+        [object[]] $Arguments = @(),
+
+        [AllowEmptyCollection()]
+        [object[]] $Targets = @()
+    )
+
+    if ($null -eq $Arguments) { $Arguments = @() }
+
+    try {
+        $options = ConvertFrom-ResikArgument -Arguments $Arguments
+    }
+    catch [System.ArgumentException] {
+        Write-ResikError $_.Exception.Message
+        return 2
+    }
+
+    if ($options.Help) {
+        Write-Host (Get-ResikHelpText)
+        return 0
+    }
+    if ($options.Version) {
+        Write-Host "resik $(Get-ResikVersion)"
+        return 0
+    }
+
+    if ($null -ne $options.ReportPath) {
+        Write-ResikError '--report-path is not implemented yet.'
+        return 2
+    }
+
+    $hasOnly = $null -ne $options.Only
+    if (-not $options.All -and -not $hasOnly) {
+        if ($options.NonInteractive) {
+            Write-ResikError '--non-interactive requires --all or --only <id>[,<id>...].'
+            return 2
+        }
+        return (Invoke-ResikInteractiveRun -Targets $Targets -Options $options)
+    }
+
+    try {
+        $selectionArgs = @{ Targets = $Targets; All = $options.All }
+        if ($hasOnly) { $selectionArgs.Only = $options.Only }
+        $selected = @(Resolve-ResikSelection @selectionArgs)
+    }
+    catch [System.ArgumentException] {
+        Write-ResikError $_.Exception.Message
+        return 2
+    }
+
+    if ($selected.Count -eq 0) {
+        Write-Host 'No cleanup targets are registered yet.'
+        return 0
+    }
+
+    if ($options.DryRun) {
+        Write-Host 'Dry run: analyzing selected targets. Nothing will be modified.'
+    }
+    else {
+        Write-Host 'Analyzing selected targets...'
+    }
+    $analysis = @(Invoke-ResikAnalysisWithSpinner -Targets $selected)
+    foreach ($line in (Format-ResikSummary -Results $analysis -Targets $selected)) {
+        Write-Host $line
+    }
+    $analysisFailed = @($analysis | Where-Object { $_.Status -eq 'Failed' }).Count -gt 0
+
+    if ($options.DryRun) {
+        if ($analysisFailed) { return 1 }
+        return 0
+    }
+
+    return (Invoke-ResikCleanupStep -Targets $selected -Analysis $analysis -Options $options -AnalysisFailed $analysisFailed)
+}
+
+function Invoke-ResikInteractiveRun {
+    # Analyzes every target, lets the user pick some, then analyzes (dry run)
+    # or confirms and cleans the picked ones.
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [AllowEmptyCollection()]
+        [object[]] $Targets = @(),
+
+        [object] $Options
+    )
+
+    $mode = Get-ResikPickerMode
+    if ($mode -eq 'None') {
+        Write-ResikError 'Interactive selection needs a terminal. Use --all or --only <id>[,<id>...]. See: resik --help'
+        return 2
+    }
+    if ($Targets.Count -eq 0) {
+        Write-Host 'No cleanup targets are registered yet.'
+        return 0
+    }
+
+    Write-Host 'Analyzing targets...'
+    $analysis = @(Invoke-ResikAnalysisWithSpinner -Targets $Targets)
+    Write-Host ''
+    $choice = Select-ResikTargetInteractive -Targets $Targets -Analysis $analysis -Mode $mode -DryRun:$Options.DryRun
+    Write-Host ''
+    if ($choice.Cancelled) {
+        Write-Host 'Cancelled. Nothing was changed.'
+        return 0
+    }
+    $selected = @($choice.Targets)
+    if ($selected.Count -eq 0) {
+        Write-Host 'Nothing selected. Nothing was changed.'
+        return 0
+    }
+
+    $ids = @($selected | ForEach-Object { $_.Id })
+    $selectedAnalysis = @($analysis | Where-Object { $ids -contains $_.TargetId })
+    if ($Options.DryRun) {
+        Write-Host 'Dry run: nothing will be modified.'
+        foreach ($line in (Format-ResikSummary -Results $selectedAnalysis -Targets $selected)) {
+            Write-Host $line
+        }
+        return 0
+    }
+
+    Invoke-ResikCleanupStep -Targets $selected -Analysis $selectedAnalysis -Options $Options -AnalysisFailed $false
+}
+
+function Invoke-ResikAnalysisWithSpinner {
+    # Analysis can take a while (sizing large caches, starting tools), so a
+    # spinner shows which target is being analyzed.
+    [CmdletBinding()]
+    param(
+        [AllowEmptyCollection()]
+        [object[]] $Targets = @()
+    )
+
+    $spinner = Start-ResikSpinner -Message 'Analyzing targets'
+    try {
+        Invoke-ResikAnalysis -Targets $Targets -Spinner $spinner
+    }
+    finally {
+        Stop-ResikSpinner -Spinner $spinner
+    }
+}
+
+function Test-ResikInteractiveInput {
+    # True when a person can answer a prompt on the console.
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param()
+    [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
+}
+
+function Read-ResikConfirmation {
+    # Asks a yes/no question; only "y" or "yes" confirms.
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([string] $Prompt)
+    $answer = Read-Host -Prompt $Prompt
+    $null -ne $answer -and @('y', 'yes') -contains $answer.Trim().ToLowerInvariant()
+}
+
+function Invoke-ResikCleanupStep {
+    # Confirms and runs cleanup for the targets whose analysis succeeded.
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [object[]] $Targets,
+        [object[]] $Analysis,
+        [object] $Options,
+        [bool] $AnalysisFailed
+    )
+
+    $eligible = @($Targets | Where-Object {
+            $id = $_.Id
+            $null -ne $_.Clean -and @($Analysis | Where-Object { $_.TargetId -eq $id -and $_.Status -eq 'AnalysisOnly' }).Count -gt 0
+        })
+
+    Write-Host ''
+    if ($eligible.Count -eq 0) {
+        Write-Host 'Nothing to clean.'
+        if ($AnalysisFailed) { return 1 }
+        return 0
+    }
+
+    foreach ($line in (Format-ResikCleanupPlan -Targets $eligible -AnalysisResults $Analysis)) {
+        Write-Host $line
+    }
+    Write-Host ''
+
+    # The only confirmation prompt in Resik; --force skips it.
+    if (-not $Options.Force) {
+        if ($Options.NonInteractive -or -not (Test-ResikInteractiveInput)) {
+            Write-ResikError 'Cleanup needs confirmation. Add --force to confirm without a prompt, or use --dry-run.'
+            return 2
+        }
+        if (-not (Read-ResikConfirmation -Prompt 'Clean these targets? [y/N]')) {
+            Write-Host 'Cancelled. Nothing was changed.'
+            return 0
+        }
+    }
+
+    $results = @(foreach ($target in $eligible) {
+            $estimate = ($Analysis | Where-Object { $_.TargetId -eq $target.Id } | Select-Object -First 1).EstimatedBytes
+            Invoke-ResikTargetCleanup -Target $target -EstimatedBytes $estimate
+        })
+
+    Write-Host ''
+    foreach ($line in (Format-ResikCleanupSummary -Results $results)) {
+        Write-Host $line
+    }
+
+    if ($AnalysisFailed -or @($results | Where-Object { $_.Status -in @('Failed', 'PartialSuccess') }).Count -gt 0) {
+        return 1
+    }
+    0
+}
