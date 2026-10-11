@@ -1,0 +1,33 @@
+# Local environment and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# PowerShell testing and analysis artifacts
+TestResults/
+coverage/
+*.coverage
+
+# Build and packaging artifacts
+dist/
+build/
+out/
+artifacts/
+
+# Temporary files and logs
+*.tmp
+*.temp
+*.log
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local.json
+
+# OS-generated files
+Thumbs.db
+Desktop.ini
+.DS_Store
