@@ -24,8 +24,8 @@ git tag -a v0.1.0 -m "Resik 0.1.0"
 ```
 
 The build script writes `dist/resik-<version>.zip` (ignored by Git) containing
-`Resik.ps1`, its `Core/` and `Reporting/` sources, `LICENSE`, and `README.md`,
-and prints the archive's SHA-256. Zip archives embed timestamps, so rebuilding
+the contents of `src/Resik` (`Resik.ps1` and every source subfolder),
+`LICENSE`, and `README.md`, and prints the archive's SHA-256. Zip archives embed timestamps, so rebuilding
 produces a different hash; always use the hash of the file you upload.
 
 ## 3. Publish the GitHub Release
