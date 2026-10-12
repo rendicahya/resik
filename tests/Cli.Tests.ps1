@@ -10,6 +10,9 @@ BeforeAll {
         # Standard input is always redirected and answers "n", so a child
         # process can never be told to clean.
         param([string[]] $Arguments)
+        # Windows PowerShell 5.1 wraps a native command's stderr in error
+        # records under 2>&1, which throw when the caller's preference is Stop.
+        $ErrorActionPreference = 'Continue'
         $output = 'n' | & $script:powershellPath -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $script:entryPoint @Arguments 2>&1 |
             ForEach-Object { "$_" }
         [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($output -join "`n") }
@@ -389,6 +392,7 @@ Describe 'Resik.ps1 entry point' {
         $run.ExitCode | Should -Be 2
         $run.Output | Should -BeLike '*Interactive selection needs a terminal*'
 
+        $ErrorActionPreference = 'Continue'  # see Invoke-ResikProcess
         $output = 'n' | & $script:powershellPath -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& '$script:entryPoint'; exit `$LASTEXITCODE" 2>&1 |
             ForEach-Object { "$_" }
         $LASTEXITCODE | Should -Be 2
@@ -442,6 +446,7 @@ Describe 'Resik.ps1 entry point' {
     }
 
     It 'parses arguments the same way when invoked in-process, as the Scoop PowerShell shim does' {
+        $ErrorActionPreference = 'Continue'  # see Invoke-ResikProcess
         $output = & $script:powershellPath -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& '$script:entryPoint' --dry-run --only=foo,bar; exit `$LASTEXITCODE" 2>&1 |
             ForEach-Object { "$_" }
         $LASTEXITCODE | Should -Be 2
