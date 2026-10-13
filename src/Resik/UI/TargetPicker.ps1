@@ -136,7 +136,9 @@ function Invoke-ResikPickerKey {
             return 'Continue'
         }
         'All' {
-            foreach ($item in $State.Items) { if ($item.Selectable) { $item.Selected = $true } }
+            foreach ($item in $State.Items) {
+                if ($item.Selectable -and -not (Get-ResikOptionalProperty $item.Target 'ExplicitOnly')) { $item.Selected = $true }
+            }
             return 'Continue'
         }
         'None' {
@@ -278,7 +280,7 @@ function Show-ResikTargetPicker {
 function ConvertFrom-ResikNumberedSelection {
     # Parses the answer to the numbered list: "1,3" or "1 3", "a" or "all", or
     # an empty answer to cancel. Returns Action ('Select', 'Cancel', 'Invalid')
-    # and zero-based Indexes into the selectable items.
+    # and zero-based Indexes into the selectable items. All is true for "a".
     [CmdletBinding()]
     param(
         [AllowEmptyString()]
@@ -290,22 +292,22 @@ function ConvertFrom-ResikNumberedSelection {
 
     $answer = "$Text".Trim().ToLowerInvariant()
     if ($answer -eq '') {
-        return [pscustomobject]@{ Action = 'Cancel'; Indexes = @() }
+        return [pscustomobject]@{ Action = 'Cancel'; Indexes = @(); All = $false }
     }
     if ($answer -eq 'a' -or $answer -eq 'all') {
         $all = if ($Count -gt 0) { @(0..($Count - 1)) } else { @() }
-        return [pscustomobject]@{ Action = 'Select'; Indexes = $all }
+        return [pscustomobject]@{ Action = 'Select'; Indexes = $all; All = $true }
     }
 
     $indexes = New-Object System.Collections.Generic.List[int]
     foreach ($part in ($answer -split '[,\s]+' | Where-Object { $_ })) {
         $number = 0
         if (-not [int]::TryParse($part, [ref]$number) -or $number -lt 1 -or $number -gt $Count) {
-            return [pscustomobject]@{ Action = 'Invalid'; Indexes = @() }
+            return [pscustomobject]@{ Action = 'Invalid'; Indexes = @(); All = $false }
         }
         if (-not $indexes.Contains($number - 1)) { $indexes.Add($number - 1) }
     }
-    [pscustomobject]@{ Action = 'Select'; Indexes = $indexes.ToArray() }
+    [pscustomobject]@{ Action = 'Select'; Indexes = $indexes.ToArray(); All = $false }
 }
 
 function Read-ResikLine {
@@ -350,7 +352,11 @@ function Read-ResikNumberedSelection {
             Write-Host "Enter numbers from 1 to $($selectable.Count), separated by commas or spaces."
             continue
         }
-        foreach ($index in $parsed.Indexes) { $selectable[$index].Selected = $true }
+        foreach ($index in $parsed.Indexes) {
+            # "a" leaves out targets that must be chosen one by one.
+            if ($parsed.All -and (Get-ResikOptionalProperty $selectable[$index].Target 'ExplicitOnly')) { continue }
+            $selectable[$index].Selected = $true
+        }
         return 'Confirm'
     }
 }

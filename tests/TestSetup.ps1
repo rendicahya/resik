@@ -13,6 +13,7 @@ $resikSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'src\Resik'
 . (Join-Path $resikSource 'Core\NativeCommand.ps1')
 . (Join-Path $resikSource 'Core\FileSystem.ps1')
 . (Join-Path $resikSource 'Core\Cleanup.ps1')
+. (Join-Path $resikSource 'Core\Deletion.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Uv.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Pip.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Poetry.ps1')

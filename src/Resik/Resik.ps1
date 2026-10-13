@@ -15,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Core\NativeCommand.ps1')
 . (Join-Path $PSScriptRoot 'Core\FileSystem.ps1')
 . (Join-Path $PSScriptRoot 'Core\Cleanup.ps1')
+. (Join-Path $PSScriptRoot 'Core\Deletion.ps1')
 . (Join-Path $PSScriptRoot 'DeveloperCleanup\Uv.ps1')
 . (Join-Path $PSScriptRoot 'DeveloperCleanup\Pip.ps1')
 . (Join-Path $PSScriptRoot 'DeveloperCleanup\Poetry.ps1')

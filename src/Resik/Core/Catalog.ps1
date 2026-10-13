@@ -18,6 +18,7 @@ function Get-ResikTargetCatalog {
     New-ResikPlaywrightTarget
     New-ResikScoopAppsTarget
     New-ResikScoopCacheTarget
+    New-ResikScoopPersistTarget
     New-ResikChocolateyTarget
     New-ResikNuGetTarget
     # Analysis only: these report sizes and are never cleaned.
