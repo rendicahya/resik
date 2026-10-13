@@ -11,8 +11,9 @@
 
 function Resolve-ResikExecutable {
     # Returns the full path of the first <Name><Extension> found on PATH, or
-    # $null. Use '.cmd' only for tools that ship as batch files (Scoop, npm);
-    # Invoke-ResikNativeCommand restricts the arguments passed to them.
+    # $null. Use '.cmd' or '.bat' only for tools that ship as batch files
+    # (Scoop, npm, Composer); Invoke-ResikNativeCommand restricts the arguments
+    # passed to them.
     [CmdletBinding()]
     [OutputType([string])]
     param(
@@ -20,7 +21,7 @@ function Resolve-ResikExecutable {
         [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')]
         [string] $Name,
 
-        [ValidateSet('.exe', '.cmd')]
+        [ValidateSet('.exe', '.cmd', '.bat')]
         [string] $Extension = '.exe'
     )
 

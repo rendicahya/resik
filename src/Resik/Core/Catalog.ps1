@@ -10,9 +10,11 @@ function Get-ResikTargetCatalog {
 
     New-ResikUvTarget
     New-ResikPipTarget
+    New-ResikPoetryTarget
     New-ResikCondaTarget
     New-ResikHuggingFaceTarget
     New-ResikNpmTarget
+    New-ResikComposerTarget
     New-ResikPlaywrightTarget
     New-ResikScoopAppsTarget
     New-ResikScoopCacheTarget
