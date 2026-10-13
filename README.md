@@ -1,8 +1,8 @@
 # resik
 A safe, native PowerShell cleanup utility for Windows and developer-tool caches.
 
-> **Status: early development.** Resik cleans the caches of uv, pip, Conda,
-> Hugging Face, npm, Scoop, Chocolatey, and NuGet, and Playwright's browsers.
+> **Status: early development.** Resik cleans the caches of uv, pip, Poetry, Conda,
+> Hugging Face, npm, Composer, Scoop, Chocolatey, and NuGet, and Playwright's browsers.
 > For Gradle, Maven, and JetBrains IDEs it only reports sizes. It never cleans
 > anything without showing you the plan first and asking for confirmation.
 
@@ -133,7 +133,9 @@ folders (or folders containing them), or symbolic links and junctions.
 | `pip` | Downloaded and locally built packages in the pip cache | `python -m pip cache purge --cache-dir <dir>` | Low |
 | `conda` | Unused packages, package downloads, index cache, and logs | `conda clean --all --yes` | Medium |
 | `huggingface` | Hugging Face Hub revisions no branch or tag uses, and interrupted downloads | `hf cache prune --yes --cache-dir <dir>` | Low |
+| `poetry` | Poetry's repository caches (package metadata and downloads) | `poetry cache clear <name> --all --no-interaction` per cache | Low |
 | `npm` | npm's package cache (`<cache>\_cacache`) | `npm cache clean --force` | Low |
+| `composer` | Composer's cache (packages, repository metadata, VCS clones) | `composer global clear-cache --no-interaction` | Low |
 | `playwright` | Browsers that Playwright downloaded | `playwright uninstall --all` | Medium |
 | `scoop-apps` | Old versions of installed Scoop apps | `scoop cleanup *` | Low |
 | `scoop-cache` | Installers in Scoop's download cache | `scoop cache rm *` | Low |
@@ -164,8 +166,20 @@ What these remove is downloaded again when needed. Details:
   files that no repo uses are removed (`hf cache prune`); the models and
   datasets you use are kept, and so are your login tokens. The estimate comes
   from `hf cache prune --dry-run` and is rounded.
+- **poetry:** the location comes from `poetry config cache-dir` (which honors
+  `POETRY_CACHE_DIR`). Each cache that `poetry cache list` shows is cleared by
+  name, so this works with Poetry versions before 2.3, and one failed cache is
+  reported without hiding the others. Poetry's `artifacts` folder (built
+  wheels) is not cleared, because `poetry cache clear` does not touch it.
+  Projects, lock files, and virtual environments are kept.
 - **npm:** only `_cacache` is removed; the npx cache and logs next to it, and
   every `node_modules` folder, are kept.
+- **composer:** needs `composer.bat` (Composer-Setup) or a `composer.cmd` shim
+  (Scoop) on PATH. The folders come from `composer global config cache-dir`
+  (and `cache-files-dir`, `cache-repo-dir`, `cache-vcs-dir`); `global` makes
+  Composer read and clear the same caches whatever the current folder is.
+  Composer empties `cache-dir` entirely, so do not point `COMPOSER_CACHE_DIR`
+  at a folder that holds anything else. `vendor` folders are not touched.
 - **playwright:** these are browser installations, not a cache. Removing them
   breaks Playwright tests and scripts until you run `playwright install`, which
   downloads them again. Needs the `playwright` command on PATH (the Python
@@ -235,8 +249,9 @@ src/Resik/
     FileSystem.ps1        path safety checks, size and free-space measurement
     Cleanup.ps1           cleanup with per-target isolation
     Catalog.ps1           registered cleanup targets
-  DeveloperCleanup/       one file per tool: Uv, Pip, Conda, HuggingFace, Npm,
-                          Playwright, Scoop, Chocolatey, NuGet, and the
+  DeveloperCleanup/       one file per tool: Uv, Pip, Poetry, Conda,
+                          HuggingFace, Npm, Composer, Playwright, Scoop,
+                          Chocolatey, NuGet, and the
                           analysis-only Gradle, Maven, JetBrains
   Reporting/
     ConsoleReport.ps1     console summaries
