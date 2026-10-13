@@ -1,7 +1,12 @@
 # Scoop targets (https://scoop.sh/), verified against Scoop v0.6.0:
 #   scoop-apps    "scoop cleanup *"    removes old versions of installed apps
 #   scoop-cache   "scoop cache rm *"   removes downloaded installers
-# These are two separate targets so that each reports its own result.
+#   scoop-persist (no Scoop command)   deletes <root>\persist\<app> folders of
+#                                      apps with no <root>\apps\<app> folder
+# These are separate targets so that each reports its own result. Scoop keeps
+# persist data after "scoop uninstall" unless --purge is given, and has no
+# command to remove it later, so scoop-persist deletes the folders with
+# Remove-ResikDirectoryTree, one by one, after the user confirms each.
 # Neither command has a preview mode, so analysis reads the filesystem:
 #
 # - Scoop's root is $env:SCOOP, else root_path in Scoop's config, else the
@@ -173,6 +178,164 @@ function Invoke-ResikScoopCacheCleanup {
     # Scoop reports success even when it cannot delete a file, hence ExpectEmpty.
     Invoke-ResikMeasuredCommand -FilePath $scoop -ArgumentList @('cache', 'rm', '*') `
         -MeasurePath @($location.Cache) -TimeoutSeconds 1800 -ExpectEmpty
+}
+
+function Get-ResikScoopLeftoverPersist {
+    # Emits the folders in <root>\persist whose app has no folder in
+    # <root>\apps, that is, data Scoop kept after the app was uninstalled.
+    # Links are left out: they are not data Resik should remove.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [object] $Location
+    )
+
+    $persist = Join-Path $Location.Root 'persist'
+    if (-not (Test-Path -LiteralPath $persist -PathType Container)) { return }
+    foreach ($folder in @(Get-ChildItem -LiteralPath $persist -Directory -Force -ErrorAction SilentlyContinue)) {
+        if ($folder.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { continue }
+        if (Test-Path -LiteralPath (Join-Path $Location.Apps $folder.Name)) { continue }
+        [pscustomobject]@{ Name = $folder.Name; Path = $folder.FullName }
+    }
+}
+
+function Get-ResikScoopPersistPath {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [object] $Location
+    )
+
+    $persist = Join-Path $Location.Root 'persist'
+    $issue = Get-ResikPathSafetyIssue -Path $persist
+    if ($issue) { throw "Refusing to clean Scoop's persist folder: $issue" }
+    $persist
+}
+
+function Invoke-ResikScoopPersistAnalysis {
+    $location = Get-ResikScoopLocation -ScoopPath (Get-ResikScoopExecutable)
+    $persist = Get-ResikScoopPersistPath -Location $location
+    $leftovers = @(Get-ResikScoopLeftoverPersist -Location $location)
+    if ($leftovers.Count -eq 0) {
+        return [pscustomobject]@{ EstimatedBytes = 0; Details = "No leftover app data in $persist" }
+    }
+    $total = [long]0
+    $unreadable = 0
+    $parts = foreach ($leftover in $leftovers) {
+        $size = Measure-ResikPathSet -Path @($leftover.Path)
+        $total += $size.Bytes
+        $unreadable += $size.Unreadable
+        "$($leftover.Name) ($(Format-ResikSize $size.Bytes))"
+    }
+    $details = "$($leftovers.Count) folder(s) in $persist for apps that are not installed: $($parts -join ', ')"
+    if ($unreadable -gt 0) { $details += "; $unreadable folder(s) could not be read" }
+    [pscustomobject]@{ EstimatedBytes = $total; Details = $details }
+}
+
+function Invoke-ResikScoopPersistCleanup {
+    # Scoop has no command for this ("scoop uninstall --purge" works only while
+    # the app is installed), so Resik deletes each folder itself, and only
+    # after the user confirms that folder. --force does not answer these.
+    [CmdletBinding()]
+    param(
+        [object] $Context
+    )
+
+    $canPrompt = $null -ne $Context -and [bool](Get-ResikOptionalProperty $Context 'CanPrompt')
+    if (-not $canPrompt) {
+        return [pscustomobject]@{
+            Status  = 'Skipped'
+            Details = 'Leftover app data is removed only after you confirm each folder, which needs a terminal. Nothing was removed.'
+        }
+    }
+
+    $location = Get-ResikScoopLocation -ScoopPath (Get-ResikScoopExecutable)
+    $persist = Get-ResikScoopPersistPath -Location $location
+    $leftovers = @(Get-ResikScoopLeftoverPersist -Location $location)
+    if ($leftovers.Count -eq 0) {
+        return [pscustomobject]@{ Status = 'Skipped'; Details = "No leftover app data in $persist; nothing to clean." }
+    }
+
+    $removed = New-Object 'System.Collections.Generic.List[string]'
+    $kept = New-Object 'System.Collections.Generic.List[string]'
+    $failed = New-Object 'System.Collections.Generic.List[string]'
+    $measured = [long]0
+    $measuredComplete = $true
+    $freeBefore = Get-ResikFreeSpace -Path $persist
+
+    foreach ($leftover in $leftovers) {
+        $before = Measure-ResikPathSet -Path @($leftover.Path)
+        $question = "Delete the saved data of '$($leftover.Name)' ($(Format-ResikSize $before.Bytes)) in $($leftover.Path)? It cannot be recovered. [y/N]"
+        if (-not (Read-ResikConfirmation -Prompt $question)) {
+            $kept.Add($leftover.Name)
+            continue
+        }
+        # The app could have been installed again while the question was open.
+        if (Test-Path -LiteralPath (Join-Path $location.Apps $leftover.Name)) {
+            $kept.Add("$($leftover.Name) (installed again)")
+            continue
+        }
+
+        $spinner = Start-ResikSpinner -Message "Deleting $($leftover.Name)"
+        try {
+            $deletion = Remove-ResikDirectoryTree -Path $leftover.Path -Scope $persist -Confirm:$false
+        }
+        catch {
+            $deletion = [pscustomobject]@{ Removed = $false; Errors = @($_.Exception.Message) }
+        }
+        finally {
+            Stop-ResikSpinner -Spinner $spinner
+        }
+
+        $after = Measure-ResikPathSet -Path @($leftover.Path)
+        if ($before.Unreadable -eq 0 -and $after.Unreadable -eq 0) { $measured += $before.Bytes - $after.Bytes }
+        else { $measuredComplete = $false }
+
+        if ($deletion.Removed) {
+            $removed.Add($leftover.Name)
+        }
+        else {
+            $reason = @($deletion.Errors) | Select-Object -First 1
+            $failed.Add("$($leftover.Name) ($(@($deletion.Errors).Count) item(s) could not be deleted, for example $reason)")
+        }
+    }
+
+    $freeAfter = Get-ResikFreeSpace -Path $persist
+    $attempted = $removed.Count + $failed.Count
+    $parts = @()
+    if ($removed.Count -gt 0) { $parts += "Deleted: $($removed -join ', ')" }
+    if ($failed.Count -gt 0) { $parts += "Not fully deleted: $($failed -join '; ')" }
+    if ($kept.Count -gt 0) { $parts += "Kept: $($kept -join ', ')" }
+
+    $status = if ($attempted -eq 0) { 'Skipped' }
+    elseif ($failed.Count -eq 0) { 'Success' }
+    elseif ($removed.Count -gt 0 -or ($measuredComplete -and $measured -gt 0)) { 'PartialSuccess' }
+    else { 'Failed' }
+
+    [pscustomobject]@{
+        Status               = $status
+        Details              = ($parts -join '. ')
+        MeasuredBytes        = $(if ($attempted -gt 0 -and $measuredComplete) { $measured } else { $null })
+        FreeSpaceChangeBytes = $(if ($attempted -gt 0 -and $null -ne $freeBefore -and $null -ne $freeAfter) { $freeAfter - $freeBefore } else { $null })
+    }
+}
+
+function New-ResikScoopPersistTarget {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Creates an in-memory object only.')]
+    [CmdletBinding()]
+    param()
+
+    New-ResikTarget -Id 'scoop-persist' -Name 'Scoop leftover app data' -Category Developer -RiskLevel High `
+        -ExplicitOnly `
+        -Description ('Deletes folders in Scoop''s persist folder that belong to apps that are no longer ' +
+            'installed. These hold the apps'' settings and data (for some apps, everything you saved in them), ' +
+            'which a reinstall would have reused. Scoop has no command for this, so Resik deletes each folder ' +
+            'itself after you confirm that folder; it cannot be recovered. Never chosen by --all or "select all".') `
+        -Detect { Invoke-ResikScoopDetection } `
+        -Analyze { Invoke-ResikScoopPersistAnalysis } `
+        -Clean { param($Context) Invoke-ResikScoopPersistCleanup -Context $Context }
 }
 
 function New-ResikScoopAppsTarget {

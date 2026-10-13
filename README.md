@@ -91,7 +91,7 @@ resik --version
 | `-h`, `--help` | Show usage and supported options. |
 | `-v`, `--version` | Show the Resik version. |
 | `-n`, `--dry-run` | Analyze targets without changing anything. With the picker, pick what to analyze. |
-| `-a`, `--all` | Select all registered targets, without the picker. |
+| `-a`, `--all` | Select all targets except `scoop-persist`, without the picker. |
 | `-o`, `--only <ids>` | Select specific target IDs (comma-separated), without the picker. |
 | `--non-interactive` | Never prompt. Requires `--all` or `--only`, and `--force` to clean. |
 | `--report-path <path>` | Write a JSON report. Not implemented yet; rejected with an error. |
@@ -122,8 +122,8 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
 
 ### Targets
 
-Every target cleans through the tool's own documented command; Resik never
-deletes cache files itself. Before running it, Resik asks the tool where its
+Every target in the table below cleans through the tool's own documented
+command; Resik does not delete those cache files itself. Before running it, Resik asks the tool where its
 cache is and refuses locations that are drive roots, system or user-profile
 folders (or folders containing them), or symbolic links and junctions.
 
@@ -189,6 +189,30 @@ What these remove is downloaded again when needed. Details:
   directly from it, and neither is NuGet's temp folder, which coordinates
   running restores.
 
+#### Leftover app data (chosen one by one)
+
+| ID | What it removes | How | Risk |
+| --- | --- | --- | --- |
+| `scoop-persist` | Folders in `<scoop>\persist` of apps that are no longer installed | Resik deletes each folder you confirm | High |
+
+When you uninstall a Scoop app without `--purge`, Scoop keeps its settings and
+data in `<scoop>\persist\<app>` so a reinstall can reuse them. Scoop has no
+command to remove that data once the app is gone, so this is the one target
+where Resik deletes files itself:
+
+- A folder counts as leftover when `<scoop>\apps` has no folder of that name.
+  Links in `persist` are ignored, and global apps are not checked.
+- `--all` and "select all" in the picker never choose it; name it with
+  `--only scoop-persist` or select it yourself.
+- During cleanup Resik asks about each folder separately, showing its name,
+  size, and path. `--force` does not answer these questions, and without a
+  terminal nothing is removed. Before deleting, Resik checks again that the
+  app is still not installed.
+- The deletion never follows symbolic links or junctions, and stays inside
+  `persist`. Files that are in use are skipped and reported.
+- This data cannot be downloaded again. For some portable apps it is
+  everything you saved in them.
+
 #### Analysis only
 
 These targets show their size but cannot be selected for cleaning, because
@@ -234,6 +258,7 @@ src/Resik/
     NativeCommand.ps1     runs external tools with captured output and timeouts
     FileSystem.ps1        path safety checks, size and free-space measurement
     Cleanup.ps1           cleanup with per-target isolation
+    Deletion.ps1          link-safe folder deletion (used only by scoop-persist)
     Catalog.ps1           registered cleanup targets
   DeveloperCleanup/       one file per tool: Uv, Pip, Conda, HuggingFace, Npm,
                           Playwright, Scoop, Chocolatey, NuGet, and the

@@ -111,7 +111,10 @@ function Invoke-ResikTargetCleanup {
         [object] $Target,
 
         # The estimate from analysis, carried into the result for comparison.
-        [Nullable[long]] $EstimatedBytes = $null
+        [Nullable[long]] $EstimatedBytes = $null,
+
+        # True when a person can answer the target's own questions.
+        [bool] $CanPrompt = $false
     )
 
     $ErrorActionPreference = 'Stop'
@@ -122,7 +125,7 @@ function Invoke-ResikTargetCleanup {
     }
 
     try {
-        $outcome = & $Target.Clean
+        $outcome = & $Target.Clean ([pscustomobject]@{ CanPrompt = $CanPrompt })
         $status = [string](Get-ResikOptionalProperty $outcome 'Status')
         if (@('Success', 'PartialSuccess', 'Failed', 'Skipped') -cnotcontains $status) {
             throw "Cleanup returned an invalid status '$status'."

@@ -42,6 +42,10 @@ $($targetLines -join [Environment]::NewLine)
 Before cleaning, Resik shows what will be removed and asks
 "Clean these targets? [y/N]". --force skips only that question. With
 --non-interactive, or when input is redirected, cleanup requires --force.
+
+scoop-persist deletes app data and is never chosen by --all or by "select
+all". It asks about each folder, even with --force, and removes nothing
+without a terminal.
 "@
 }
 
@@ -261,9 +265,11 @@ function Invoke-ResikCleanupStep {
         }
     }
 
+    # Some targets ask about each item; --force never answers those questions.
+    $canPrompt = -not $Options.NonInteractive -and (Test-ResikInteractiveInput)
     $results = @(foreach ($target in $eligible) {
             $estimate = ($Analysis | Where-Object { $_.TargetId -eq $target.Id } | Select-Object -First 1).EstimatedBytes
-            Invoke-ResikTargetCleanup -Target $target -EstimatedBytes $estimate
+            Invoke-ResikTargetCleanup -Target $target -EstimatedBytes $estimate -CanPrompt $canPrompt
         })
 
     Write-Host ''

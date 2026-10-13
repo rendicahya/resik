@@ -24,6 +24,11 @@ function New-ResikTarget {
         PartialSuccess, Failed, or Skipped), a Details string, and optional
         MeasuredBytes (observed cache reduction) and FreeSpaceChangeBytes
         (observed change in free disk space). Missing measurements are $null.
+        Clean receives one argument, a context object whose CanPrompt is true
+        when a person can answer questions on the console; most targets ignore it.
+
+        ExplicitOnly targets are never selected by --all or by "select all" in
+        the picker; they must be chosen by ID or one by one.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
         Justification = 'Creates an in-memory object only.')]
@@ -55,19 +60,22 @@ function New-ResikTarget {
         [Parameter(Mandatory)]
         [scriptblock] $Analyze,
 
-        [scriptblock] $Clean = $null
+        [scriptblock] $Clean = $null,
+
+        [switch] $ExplicitOnly
     )
 
     [pscustomobject]@{
-        PSTypeName  = 'Resik.Target'
-        Id          = $Id
-        Name        = $Name
-        Category    = $Category
-        RiskLevel   = $RiskLevel
-        Description = $Description
-        Detect      = $Detect
-        Analyze     = $Analyze
-        Clean       = $Clean
+        PSTypeName   = 'Resik.Target'
+        Id           = $Id
+        Name         = $Name
+        Category     = $Category
+        RiskLevel    = $RiskLevel
+        Description  = $Description
+        Detect       = $Detect
+        Analyze      = $Analyze
+        Clean        = $Clean
+        ExplicitOnly = [bool]$ExplicitOnly
     }
 }
 

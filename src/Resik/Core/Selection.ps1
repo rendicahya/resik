@@ -68,7 +68,8 @@ function Resolve-ResikSelection {
     }
 
     if ($All) {
-        return $Targets
+        # Targets that remove user data must be named with --only.
+        return $Targets | Where-Object { -not (Get-ResikOptionalProperty $_ 'ExplicitOnly') }
     }
 
     $requested = @(ConvertTo-ResikTargetIdList -Value $Only)
