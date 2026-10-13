@@ -15,9 +15,6 @@ No Python, Node.js, or other runtime is required.
 
 ## Installation
 
-> Resik 0.1.0 has not been published yet. Until it is, the commands below will
-> not find Resik; [run it from source](#running-from-source) instead.
-
 Install with [Scoop](https://scoop.sh/) from the `personal` bucket:
 
 ```powershell
