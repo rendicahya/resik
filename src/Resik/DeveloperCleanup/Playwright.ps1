@@ -39,7 +39,8 @@ function Get-ResikPlaywrightBrowsersDirectory {
 }
 
 function Get-ResikPlaywrightBrowserFolder {
-    # Emits the browser folders (<name>-<revision>) in the browsers folder.
+    # Emits the browser folders (<name>-<revision>) in the browsers folder, sorted
+    # ordinally because Get-ChildItem's order differs between PowerShell versions.
     [CmdletBinding()]
     [OutputType([string])]
     param(
@@ -47,10 +48,13 @@ function Get-ResikPlaywrightBrowserFolder {
         [string] $Path
     )
 
+    $found = New-Object 'System.Collections.Generic.List[string]'
     foreach ($folder in @(Get-ChildItem -LiteralPath $Path -Directory -Force -ErrorAction SilentlyContinue)) {
         if ($folder.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { continue }
-        if ($folder.Name -cmatch '^[a-z][a-z0-9_-]*-\d+$') { $folder.FullName }
+        if ($folder.Name -cmatch '^[a-z][a-z0-9_-]*-\d+$') { $found.Add($folder.FullName) }
     }
+    $found.Sort([System.StringComparer]::Ordinal)
+    $found
 }
 
 function Invoke-ResikPlaywrightDetection {
