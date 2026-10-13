@@ -10,7 +10,7 @@ Resik is a native Windows cleanup utility that helps users analyze and reclaim d
 - **Implementation:** Native PowerShell
 - **Runtime dependencies:** Windows and PowerShell; no required Python, Node.js, or third-party runtime.
 - **Distribution:** GitHub Releases and a personal Scoop bucket.
-- **Development workflow:** GitHub Flow.
+- **Development workflow:** direct commits to `main` (see section 12).
 
 Resik prioritizes safety, transparency, predictable behavior, and user control over aggressive cleanup.
 
@@ -575,21 +575,20 @@ Never claim a test passed unless it was executed and its results inspected.
 - Tests that start `Resik.ps1` in a child process pipe `n` to its standard input (`Invoke-ResikProcess`), so a child can never be confirmed into real cleanup. Tests that run a real tool's clean command must first assert that the tool points at a `TestDrive` path.
 - Factory functions such as `New-ResikTarget` suppress `PSUseShouldProcessForStateChangingFunctions` individually with a justification. Do not disable that rule globally; it must stay active for cleanup code. `PSAvoidUsingWriteHost` is disabled globally because Resik is a console tool.
 
-## 12. GitHub Flow
+## 12. Git Workflow
 
-Use GitHub Flow for all development.
+Commit directly to `main`; feature branches and pull requests are not required. Because nothing reviews a change before it lands, the local checks below must pass first, and CI is checked after every push.
 
 1. Inspect the current branch and working tree.
-2. Create a feature branch for each focused change when appropriate.
-3. Implement one logical feature or fix.
-4. Run relevant tests and static checks.
-5. Inspect `git diff --check`, the full diff, and newly created untracked files.
-6. Summarize changes, risks, and validation results.
-7. Ask for explicit approval before committing or pushing.
-8. After approval, stage only reviewed files.
-9. Inspect the staged diff.
-10. Commit with a concise, descriptive message.
-11. Push only to the intended branch and configured remote.
+2. Implement one logical feature or fix.
+3. Run the Pester suite on both Windows PowerShell 5.1 and PowerShell 7, and PSScriptAnalyzer.
+4. Inspect `git diff --check`, the full diff, and newly created untracked files.
+5. Summarize changes, risks, and validation results.
+6. Ask for explicit approval before committing or pushing.
+7. After approval, stage only reviewed files.
+8. Inspect the staged diff.
+9. Commit to `main` with a concise, descriptive message.
+10. Push `main` to the configured remote, then check that CI passes and fix any failure promptly.
 
 Do not:
 
