@@ -74,8 +74,8 @@ Describe 'Invoke-ResikCli' {
     It 'selects targets with --only' {
         Invoke-ResikCli -Arguments @('--dry-run', '--only', 'b') -Targets @((New-TestTarget -Id 'a'), (New-TestTarget -Id 'b')) |
             Should -Be 0
-        Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'b *AnalysisOnly*' }
-        Should -Invoke Write-Host -Times 0 -ParameterFilter { "$Object" -like 'a *AnalysisOnly*' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '  b  *' }
+        Should -Invoke Write-Host -Times 0 -ParameterFilter { "$Object" -like '  a  *' }
     }
 
     It 'succeeds with no registered targets' {
@@ -104,7 +104,7 @@ Describe 'Invoke-ResikCli' {
         $targets = @((New-TestTarget -Id 'bad' -Analyze { throw 'boom' }), (New-TestTarget -Id 'good'))
 
         Invoke-ResikCli -Arguments @('--dry-run', '--all') -Targets $targets | Should -Be 1
-        Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'good*AnalysisOnly*' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '  good  *' }
     }
 
     It 'never runs Clean during --dry-run, even with --force' {
@@ -214,8 +214,8 @@ Describe 'Invoke-ResikCli interactive selection' {
         Should -Invoke Select-ResikTargetInteractive -ParameterFilter { $DryRun }
         Should -Invoke Read-ResikConfirmation -Times 0
         $script:cleaned | Should -BeNullOrEmpty
-        Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'a *AnalysisOnly*' }
-        Should -Invoke Write-Host -Times 0 -ParameterFilter { "$Object" -like 'b *AnalysisOnly*' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '  a  *' }
+        Should -Invoke Write-Host -Times 0 -ParameterFilter { "$Object" -like '  b  *' }
     }
 
     It 'uses the numbered list when the terminal has no key input' {
@@ -269,13 +269,13 @@ Describe 'Invoke-ResikCli cleanup' {
 
         Should -Invoke Read-ResikConfirmation -Times 1 -Exactly
         $script:cleaned | Should -Be @('fake')
-        Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'fake *Success*' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '  fake  *Cleaned*' }
         Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'Measured cache reduction: 100 B*' }
     }
 
     It 'shows the plan before asking' {
         Invoke-ResikCli -Arguments @('--all') -Targets @(New-CleanableTarget) | Should -Be 0
-        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '*will be cleaned*' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'Resik will clean*' }
         Should -Invoke Write-Host -ParameterFilter { "$Object" -like '*Test target*' }
     }
 
@@ -344,7 +344,8 @@ Describe 'Invoke-ResikCli cleanup' {
         Invoke-ResikCli -Arguments @('--all', '--force') -Targets $targets | Should -Be 1
 
         $script:cleaned | Should -Be @('good')
-        Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'bad *Failed*Cleanup failed: boom*' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '  bad  *Failed*' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -eq '    Cleanup failed: boom' }
     }
 
     It 'exits 1 on partial success' {
@@ -410,14 +411,14 @@ Describe 'Resik.ps1 entry point' {
         $run = Invoke-ResikProcess -Arguments '--non-interactive', '-n', '-a'
         $run.ExitCode | Should -Be 0
         $run.Output | Should -BeLike '*Dry run:*'
-        $run.Output | Should -Match '(?m)^uv\s+(Skipped|AnalysisOnly)\s'
+        $run.Output | Should -Match '(?m)^(  uv\s|Not found: (.*, )?uv(,|\r?$))'
     }
 
     It 'refuses to clean without --force when input is redirected, without cleaning anything' {
         # The child's input is redirected, so it must stop before cleanup.
         # If uv is missing or has no cache, there is nothing to clean and it exits 0.
         $run = Invoke-ResikProcess -Arguments '--only', 'uv'
-        if ($run.Output -like '*will be cleaned*') {
+        if ($run.Output -like '*Resik will clean*') {
             $run.ExitCode | Should -Be 2
             $run.Output | Should -BeLike '*Add --force to confirm*'
             $run.Output | Should -Not -BeLike '*Running: uv cache clean*'

@@ -42,40 +42,57 @@ function New-ResikPickerState {
         [object[]] $Analysis = @()
     )
 
-    $items = foreach ($target in $Targets) {
+    # Cleanable targets come first, largest first. Tools that were not found
+    # get no row; their IDs are listed once below the list (NotFound).
+    $items = New-Object System.Collections.Generic.List[object]
+    $notFound = New-Object System.Collections.Generic.List[string]
+    $order = 0
+    foreach ($target in $Targets) {
+        $order++
         $result = $Analysis | Where-Object { $_.TargetId -eq $target.Id } | Select-Object -First 1
-        $selectable = $false
-        $details = ''
         $estimate = $null
+        $details = ''
         if ($null -eq $result) {
+            $group = 'Problem'
             $note = 'not analyzed'
         }
         else {
-            $details = $result.Message
+            $details = ConvertTo-ResikDisplayText $result.Message
             $estimate = $result.EstimatedBytes
-            if ($result.Status -eq 'AnalysisOnly' -and $null -ne $target.Clean) {
-                $selectable = $true
-                $note = Format-ResikSize $estimate
+            $group = Get-ResikAnalysisGroup -Result $result -Target $target
+            $note = switch ($group) {
+                'Ready' { '' }
+                'ReportOnly' { 'report only' }
+                'Skipped' { 'skipped' }
+                default { if ($result.Status -eq 'Failed') { 'analysis failed' } else { "$($result.Status)" } }
             }
-            elseif ($result.Status -eq 'AnalysisOnly') { $note = 'analysis only' }
-            elseif ($result.Status -eq 'Skipped') { $note = 'not found' }
-            elseif ($result.Status -eq 'Failed') { $note = 'analysis failed' }
-            else { $note = $result.Status }
+        }
+        if ($group -eq 'NotFound') {
+            $notFound.Add($target.Id)
+            continue
         }
 
-        [pscustomobject]@{
-            Target         = $target
-            Selectable     = $selectable
-            Selected       = $false
-            Note           = $note
-            Details        = $details
-            EstimatedBytes = $estimate
-        }
+        $items.Add([pscustomobject]@{
+                Target         = $target
+                Selectable     = $group -eq 'Ready'
+                Selected       = $false
+                Note           = $note
+                Details        = $details
+                EstimatedBytes = $estimate
+                Rank           = @{ Ready = 0; ReportOnly = 1; Skipped = 2; Problem = 3 }[$group]
+                Order          = $order
+            })
     }
 
+    $sorted = @($items | Sort-Object -Property Rank,
+        @{ Expression = { $null -eq $_.EstimatedBytes } },
+        @{ Expression = { $_.EstimatedBytes }; Descending = $true },
+        Order)
+
     [pscustomobject]@{
-        Items  = @($items)
-        Cursor = 0
+        Items    = $sorted
+        NotFound = $notFound.ToArray()
+        Cursor   = 0
     }
 }
 
@@ -156,11 +173,32 @@ function Format-ResikPickerRow {
     [OutputType([string])]
     param(
         [Parameter(Mandatory)]
-        [object] $Item
+        [object] $Item,
+
+        [int] $IdWidth = 12,
+
+        [int] $NameWidth = 24
     )
 
     $target = $Item.Target
-    '{0,-12} {1,-23} {2,-10} {3,-9} {4}' -f $target.Id, $target.Name, $target.Category, "$($target.RiskLevel) risk", $Item.Note
+    $size = if ($null -eq $Item.EstimatedBytes) { '?' } else { Format-ResikSize $Item.EstimatedBytes }
+    if ($Item.Note -and $null -eq $Item.EstimatedBytes) { $size = '' }
+    $name = Limit-ResikText $target.Name $NameWidth
+    ("{0,-$IdWidth}  {1,-$NameWidth}  {2,9}  {3,-6}  {4}" -f $target.Id, $name, $size, "$($target.RiskLevel)", $Item.Note).TrimEnd()
+}
+
+function Get-ResikPickerLayout {
+    # Column widths that fit every row of the picker.
+    [CmdletBinding()]
+    param([object] $State)
+
+    $idWidth = 2
+    $nameWidth = 4
+    foreach ($item in $State.Items) {
+        $idWidth = [Math]::Max($idWidth, $item.Target.Id.Length)
+        $nameWidth = [Math]::Max($nameWidth, $item.Target.Name.Length)
+    }
+    [pscustomobject]@{ IdWidth = $idWidth; NameWidth = [Math]::Min($nameWidth, 30) }
 }
 
 function Format-ResikPickerScreen {
@@ -186,20 +224,29 @@ function Format-ResikPickerScreen {
         $lines.Add([pscustomobject]@{ Text = $Text.PadRight($limit); Color = $Color })
     }
 
-    & $addLine $Title
-    & $addLine 'Up/Down: move  Space: select  A: all  N: none  Enter: confirm  Q/Esc: cancel'
+    $columns = Get-ResikPickerLayout -State $State
+    $header = '      ' + ("{0,-$($columns.IdWidth)}  {1,-$($columns.NameWidth)}  {2,9}  {3}" -f 'Target', '', 'Size', 'Risk')
+
+    & $addLine $Title 'White'
+    & $addLine 'Up/Down move   Space select   A all   N none   Enter confirm   Q cancel' 'DarkGray'
     & $addLine ''
+    & $addLine $header 'DarkGray'
 
     for ($index = 0; $index -lt $State.Items.Count; $index++) {
         $item = $State.Items[$index]
         $isCursor = $index -eq $State.Cursor
         $pointer = if ($isCursor) { '>' } else { ' ' }
         $box = if (-not $item.Selectable) { '[-]' } elseif ($item.Selected) { '[x]' } else { '[ ]' }
-        $color = if ($isCursor) { 'Cyan' } elseif (-not $item.Selectable) { 'DarkGray' } else { $null }
-        & $addLine "$pointer $box $(Format-ResikPickerRow $item)" $color
+        $color = if ($isCursor) { 'Cyan' } elseif (-not $item.Selectable) { 'DarkGray' } elseif ($item.Selected) { 'Green' } else { $null }
+        & $addLine "$pointer $box $(Format-ResikPickerRow $item -IdWidth $columns.IdWidth -NameWidth $columns.NameWidth)" $color
     }
 
     & $addLine ''
+    if ($State.NotFound.Count -gt 0) {
+        foreach ($line in @(Split-ResikText "Not found: $($State.NotFound -join ', ')" -Width $limit -Indent '  ')) {
+            & $addLine $line 'DarkGray'
+        }
+    }
     $current = if ($State.Items.Count -gt 0) { $State.Items[$State.Cursor] } else { $null }
     $details = if ($null -ne $current) { $current.Details } else { '' }
     & $addLine "  $details" 'DarkGray'
@@ -207,7 +254,7 @@ function Format-ResikPickerScreen {
     $selected = @($State.Items | Where-Object { $_.Selected })
     $total = [long]0
     foreach ($item in $selected) { if ($null -ne $item.EstimatedBytes) { $total += $item.EstimatedBytes } }
-    & $addLine "  Selected: $($selected.Count) target(s), estimated $(Format-ResikSize $total)"
+    & $addLine "  Selected: $(Format-ResikCount $selected.Count), about $(Format-ResikSize $total)"
 
     $lines.ToArray()
 }
@@ -333,10 +380,15 @@ function Read-ResikNumberedSelection {
     $selectable = @($State.Items | Where-Object { $_.Selectable })
     Write-Host $Title
     Write-Host ''
+    $columns = Get-ResikPickerLayout -State $State
     $number = 0
     foreach ($item in $State.Items) {
         $label = if ($item.Selectable) { $number++; '{0,3})' -f $number } else { '   -' }
-        Write-Host "$label $(Format-ResikPickerRow $item)"
+        Write-Host "$label $(Format-ResikPickerRow $item -IdWidth $columns.IdWidth -NameWidth $columns.NameWidth)"
+    }
+    if ($State.NotFound.Count -gt 0) {
+        Write-Host ''
+        Write-Host "Not found: $($State.NotFound -join ', ')"
     }
     Write-Host ''
     if ($selectable.Count -eq 0) {

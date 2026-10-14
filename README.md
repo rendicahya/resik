@@ -50,23 +50,27 @@ Run `resik` with no options to pick what to clean from a list:
 
 ```
 Select targets to clean
-Up/Down: move  Space: select  A: all  N: none  Enter: confirm  Q/Esc: cancel
+Up/Down move   Space select   A all   N none   Enter confirm   Q cancel
 
-> [x] uv           uv cache                Developer  Low risk  370.6 MB
-  [x] pip          pip cache               Developer  Low risk  300.5 MB
-  [ ] npm          npm cache               Developer  Low risk  1.9 GB
-  [ ] scoop-apps   Scoop old app versions  Developer  Low risk  0 B
-  [ ] scoop-cache  Scoop download cache    Developer  Low risk  0 B
-  [ ] choco        Chocolatey HTTP cache   Developer  Low risk  n/a
-  [-] nuget        NuGet HTTP cache        Developer  Low risk  not found
+      Target                                Size  Risk
+> [x] uv           uv cache               1.9 GB  Low
+  [x] npm          npm cache            370.6 MB  Low
+  [ ] pip          pip cache            300.5 MB  Low
+  [ ] scoop-cache  Scoop download cache   1.2 MB  Low
+  [ ] choco        Chocolatey HTTP cache       ?  Low
+  [-] jetbrains    JetBrains IDE caches 520.4 MB  Low     report only
 
-  C:\Users\you\AppData\Local\uv\cache (5145 files)
-  Selected: 2 target(s), estimated 671.1 MB
+  Not found: poetry, conda, pnpm, yarn, go-build, go-modules, nuget
+  ~\AppData\Local\uv\cache (5145 files)
+  Selected: 2 targets, about 2.3 GB
 ```
 
-Targets that are not installed, whose analysis failed, or that Resik only
-measures (see [Analysis only](#analysis-only)) are shown as `[-]` and cannot
-be selected; the line under the list explains why.
+Targets that can be cleaned come first, largest first. Targets whose analysis
+failed, or that Resik only measures (see [Analysis only](#analysis-only)), are
+shown as `[-]` and cannot be selected; tools that are not installed are listed
+on one line below. `?` means the size cannot be measured in advance, and `~` is
+your user profile folder. The line under the list shows details for the target
+under the cursor.
 Nothing is selected at first. After you press Enter, Resik shows what it will
 remove and asks for confirmation. In terminals that cannot read single key
 presses, such as the VS Code PowerShell extension's host, Resik shows a numbered
@@ -102,7 +106,8 @@ error).
 ### How cleanup works
 
 1. Resik analyzes the targets and shows the estimated size of each, either in
-   the picker or, with `--all` or `--only`, as a table. Measuring large caches
+   the picker or, with `--all` or `--only`, as a report grouped into targets
+   ready to clean, report-only targets, and tools that were not found. Measuring large caches
    can take a while, so a spinner shows which target is being analyzed and for
    how long.
 2. It lists what will be cleaned, where, and the consequences.

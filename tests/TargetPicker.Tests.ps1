@@ -28,17 +28,18 @@ Describe 'New-ResikPickerState' {
     It 'makes only cleanable, analyzed targets selectable, and selects nothing' {
         $state = New-TestPickerState
 
-        @($state.Items | ForEach-Object { $_.Selectable }) | Should -Be @($true, $false, $true, $false)
+        @($state.Items | ForEach-Object { $_.Selectable }) | Should -Be @($true, $true, $false)
         @($state.Items | Where-Object Selected).Count | Should -Be 0
         $state.Cursor | Should -Be 0
     }
 
-    It 'explains why a target cannot be selected' {
+    It 'lists cleanable targets by size, then report-only ones, and moves missing tools to NotFound' {
         $state = New-TestPickerState
-        $state.Items[1].Note | Should -BeExactly 'not found'
-        $state.Items[1].Details | Should -BeLike '*scoop was not found*'
-        $state.Items[3].Note | Should -BeExactly 'analysis only'
-        $state.Items[0].Note | Should -BeExactly '2.0 KB'
+        @($state.Items | ForEach-Object { $_.Target.Id }) | Should -Be @('uv', 'pip', 'conda')
+        $state.NotFound | Should -Be @('scoop')
+        $state.Items[2].Note | Should -BeExactly 'report only'
+        $state.Items[0].Note | Should -BeExactly ''
+        $state.Items[0].Details | Should -BeExactly 'C:\uv\cache'
     }
 
     It 'marks a failed analysis' {
@@ -75,7 +76,7 @@ Describe 'Invoke-ResikPickerKey' {
 
     It 'moves the cursor and wraps around' {
         Invoke-ResikPickerKey -State $script:state -Command Up | Should -BeExactly 'Continue'
-        $script:state.Cursor | Should -Be 3
+        $script:state.Cursor | Should -Be 2
         Invoke-ResikPickerKey -State $script:state -Command Down | Out-Null
         $script:state.Cursor | Should -Be 0
         Invoke-ResikPickerKey -State $script:state -Command Down | Out-Null
@@ -90,14 +91,14 @@ Describe 'Invoke-ResikPickerKey' {
     }
 
     It 'does not select an unavailable item' {
-        $script:state.Cursor = 1
+        $script:state.Cursor = 2
         Invoke-ResikPickerKey -State $script:state -Command Toggle | Out-Null
-        $script:state.Items[1].Selected | Should -BeFalse
+        $script:state.Items[2].Selected | Should -BeFalse
     }
 
     It 'selects all selectable items, then none' {
         Invoke-ResikPickerKey -State $script:state -Command All | Out-Null
-        @($script:state.Items | ForEach-Object { $_.Selected }) | Should -Be @($true, $false, $true, $false)
+        @($script:state.Items | ForEach-Object { $_.Selected }) | Should -Be @($true, $true, $false)
 
         Invoke-ResikPickerKey -State $script:state -Command None | Out-Null
         @($script:state.Items | Where-Object Selected).Count | Should -Be 0
@@ -113,23 +114,30 @@ Describe 'Invoke-ResikPickerKey' {
 }
 
 Describe 'Format-ResikPickerScreen' {
-    It 'shows checkboxes, the cursor, details, and the selected total' {
+    It 'shows checkboxes, the cursor, missing tools, details, and the selected total' {
         $state = New-TestPickerState
         $state.Items[0].Selected = $true
-        $state.Items[2].Selected = $true
+        $state.Items[1].Selected = $true
 
         $lines = @(Format-ResikPickerScreen -State $state -Width 100)
         $text = @($lines | ForEach-Object { $_.Text.TrimEnd() })
 
-        $text[0] | Should -BeExactly 'Select targets to clean'
-        $text[3] | Should -BeLike '> `[x`] uv *Developer*Low risk*2.0 KB'
-        $text[4] | Should -BeLike '  `[-`] scoop *not found'
-        $text[5] | Should -BeLike '  `[x`] pip *1.0 KB'
-        $text[6] | Should -BeLike '  `[-`] conda *analysis only'
-        $text[8] | Should -BeExactly '  C:\uv\cache'
-        $text[9] | Should -BeExactly '  Selected: 2 target(s), estimated 3.0 KB'
-        $lines[3].Color | Should -BeExactly 'Cyan'
-        $lines[4].Color | Should -BeExactly 'DarkGray'
+        $text | Should -Be @(
+            'Select targets to clean'
+            'Up/Down move   Space select   A all   N none   Enter confirm   Q cancel'
+            ''
+            '      Target                   Size  Risk'
+            '> [x] uv     Fake uv        2.0 KB  Low'
+            '  [x] pip    Fake pip       1.0 KB  Low'
+            '  [-] conda  Fake conda     4.0 KB  Low     report only'
+            ''
+            '  Not found: scoop'
+            '  C:\uv\cache'
+            '  Selected: 2 targets, about 3.0 KB'
+        )
+        $lines[4].Color | Should -BeExactly 'Cyan'
+        $lines[5].Color | Should -BeExactly 'Green'
+        $lines[6].Color | Should -BeExactly 'DarkGray'
     }
 
     It 'keeps every line exactly one character narrower than the window' {
@@ -145,7 +153,7 @@ Describe 'Format-ResikPickerScreen' {
         Invoke-ResikPickerKey -State $state -Command Down | Out-Null
         Invoke-ResikPickerKey -State $state -Command All | Out-Null
         @(Format-ResikPickerScreen -State $state).Count | Should -Be $before
-        $before | Should -Be ($state.Items.Count + 6)
+        $before | Should -Be ($state.Items.Count + 8)
     }
 }
 
@@ -160,7 +168,7 @@ Describe 'Show-ResikTargetPicker' {
     }
 
     It 'returns the selection made with the keys' {
-        foreach ($key in @('Down', 'Down', 'Toggle', 'Confirm')) { $script:keys.Enqueue($key) }
+        foreach ($key in @('Down', 'Toggle', 'Confirm')) { $script:keys.Enqueue($key) }
         $state = New-TestPickerState
 
         Show-ResikTargetPicker -State $state | Should -BeExactly 'Confirm'
@@ -174,7 +182,7 @@ Describe 'Show-ResikTargetPicker' {
 
         Show-ResikTargetPicker -State $state | Should -BeExactly 'Cancel'
 
-        Should -Invoke Move-ResikConsoleCursor -Times 1 -Exactly -ParameterFilter { $Row -eq (50 - ($state.Items.Count + 6)) }
+        Should -Invoke Move-ResikConsoleCursor -Times 1 -Exactly -ParameterFilter { $Row -eq (50 - ($state.Items.Count + 8)) }
     }
 }
 
@@ -214,7 +222,7 @@ Describe 'Read-ResikNumberedSelection' {
 
         Read-ResikNumberedSelection -State $state | Should -BeExactly 'Confirm'
 
-        # Number 2 is pip, because scoop cannot be selected and has no number.
+        # Number 2 is pip; scoop was not found and has no row.
         @($state.Items | Where-Object Selected | ForEach-Object { $_.Target.Id }) | Should -Be @('pip')
         Should -Invoke Read-ResikLine -Times 2 -Exactly
         Should -Invoke Write-Host -ParameterFilter { "$Object" -like '  2) pip *' }

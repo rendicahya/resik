@@ -127,12 +127,14 @@ function Invoke-ResikCli {
         Write-Host 'Analyzing selected targets...'
     }
     $analysis = @(Invoke-ResikAnalysisWithSpinner -Targets $selected)
-    foreach ($line in (Format-ResikSummary -Results $analysis -Targets $selected)) {
+    Write-Host ''
+    foreach ($line in (Format-ResikSummary -Results $analysis -Targets $selected -Width (Get-ResikReportWidth))) {
         Write-Host $line
     }
     $analysisFailed = @($analysis | Where-Object { $_.Status -eq 'Failed' }).Count -gt 0
 
     if ($options.DryRun) {
+        Write-ResikDryRunHint -Analysis $analysis -Targets $selected
         if ($analysisFailed) { return 1 }
         return 0
     }
@@ -181,9 +183,11 @@ function Invoke-ResikInteractiveRun {
     $selectedAnalysis = @($analysis | Where-Object { $ids -contains $_.TargetId })
     if ($Options.DryRun) {
         Write-Host 'Dry run: nothing will be modified.'
-        foreach ($line in (Format-ResikSummary -Results $selectedAnalysis -Targets $selected)) {
+        Write-Host ''
+        foreach ($line in (Format-ResikSummary -Results $selectedAnalysis -Targets $selected -Width (Get-ResikReportWidth))) {
             Write-Host $line
         }
+        Write-ResikDryRunHint -Analysis $selectedAnalysis -Targets $selected
         return 0
     }
 
@@ -206,6 +210,36 @@ function Invoke-ResikAnalysisWithSpinner {
     finally {
         Stop-ResikSpinner -Spinner $spinner
     }
+}
+
+function Get-ResikReportWidth {
+    # The width reports are fitted to, or 0 (no limit) when output goes to a
+    # file or pipe, so logs keep every detail.
+    [CmdletBinding()]
+    [OutputType([int])]
+    param()
+    if ([Console]::IsOutputRedirected) { return 0 }
+    Get-ResikConsoleWidth
+}
+
+function Write-ResikDryRunHint {
+    # Tells the user how to clean what a dry run found.
+    [CmdletBinding()]
+    param(
+        [AllowEmptyCollection()]
+        [object[]] $Analysis = @(),
+
+        [AllowEmptyCollection()]
+        [object[]] $Targets = @()
+    )
+
+    $ready = @($Analysis | Where-Object {
+            $result = $_
+            $target = $Targets | Where-Object { $_.Id -eq $result.TargetId } | Select-Object -First 1
+            (Get-ResikAnalysisGroup -Result $result -Target $target) -eq 'Ready'
+        } | ForEach-Object { $_.TargetId })
+    if ($ready.Count -eq 0) { return }
+    Write-Host "To clean, run: resik --only $($ready -join ',')"
 }
 
 function Test-ResikInteractiveInput {
@@ -248,7 +282,7 @@ function Invoke-ResikCleanupStep {
         return 0
     }
 
-    foreach ($line in (Format-ResikCleanupPlan -Targets $eligible -AnalysisResults $Analysis)) {
+    foreach ($line in (Format-ResikCleanupPlan -Targets $eligible -AnalysisResults $Analysis -Width (Get-ResikReportWidth))) {
         Write-Host $line
     }
     Write-Host ''
@@ -273,7 +307,7 @@ function Invoke-ResikCleanupStep {
         })
 
     Write-Host ''
-    foreach ($line in (Format-ResikCleanupSummary -Results $results)) {
+    foreach ($line in (Format-ResikCleanupSummary -Results $results -Width (Get-ResikReportWidth))) {
         Write-Host $line
     }
 
