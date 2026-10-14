@@ -115,7 +115,7 @@ Describe 'Target catalog' {
 
     It 'gives every target a unique ID, and Clean to all but the analysis-only ones' {
         $catalog = @(Get-ResikTargetCatalog)
-        $catalog.Count | Should -Be 16
+        $catalog.Count | Should -Be 20
         @($catalog | Where-Object { $null -eq $_.Clean } | ForEach-Object { $_.Id }) | Should -Be @('gradle', 'maven', 'jetbrains')
         @($catalog.Id | Select-Object -Unique).Count | Should -Be $catalog.Count
     }

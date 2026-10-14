@@ -52,6 +52,8 @@ function Invoke-ResikMeasuredCommand {
 
         [int] $TimeoutSeconds = 1800,
 
+        [string] $WorkingDirectory = '',
+
         [switch] $ExpectEmpty
     )
 
@@ -67,7 +69,8 @@ function Invoke-ResikMeasuredCommand {
         $freeBefore = if ($freeSpaceAt) { Get-ResikFreeSpace -Path $freeSpaceAt } else { $null }
 
         Set-ResikSpinnerMessage -Spinner $spinner -Message "Waiting for $display"
-        $run = Invoke-ResikNativeCommand -FilePath $FilePath -ArgumentList $ArgumentList -TimeoutSeconds $TimeoutSeconds
+        $run = Invoke-ResikNativeCommand -FilePath $FilePath -ArgumentList $ArgumentList -TimeoutSeconds $TimeoutSeconds `
+            -WorkingDirectory $WorkingDirectory
 
         Set-ResikSpinnerMessage -Spinner $spinner -Message 'Measuring what was removed'
         $after = if ($canMeasure) { Measure-ResikPathSet -Path $MeasurePath } else { $null }

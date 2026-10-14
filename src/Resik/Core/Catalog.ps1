@@ -14,7 +14,11 @@ function Get-ResikTargetCatalog {
     New-ResikCondaTarget
     New-ResikHuggingFaceTarget
     New-ResikNpmTarget
+    New-ResikPnpmTarget
+    New-ResikYarnTarget
     New-ResikComposerTarget
+    New-ResikGoBuildTarget
+    New-ResikGoModulesTarget
     New-ResikPlaywrightTarget
     New-ResikScoopAppsTarget
     New-ResikScoopCacheTarget

@@ -113,6 +113,17 @@ function ConvertTo-ResikProcessArgument {
     $builder.ToString()
 }
 
+function Get-ResikToolWorkingDirectory {
+    # The folder to run project-aware tools (pnpm, Yarn, Go) in, so they use
+    # the user's global configuration rather than a project's: a package.json
+    # or go.mod could change the cache location or make Go download another
+    # toolchain.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+    [Environment]::GetFolderPath('UserProfile')
+}
+
 function Invoke-ResikNativeCommand {
     <#
     .SYNOPSIS
@@ -132,7 +143,12 @@ function Invoke-ResikNativeCommand {
         [string[]] $ArgumentList = @(),
 
         [ValidateRange(1, 86400)]
-        [int] $TimeoutSeconds = 60
+        [int] $TimeoutSeconds = 60,
+
+        # Empty: the process inherits Resik's current directory. Tools that
+        # read project files (package.json, go.mod) get a neutral folder, so
+        # the folder Resik was started in cannot change what they do.
+        [string] $WorkingDirectory = ''
     )
 
     $arguments = (@($ArgumentList) | ForEach-Object { ConvertTo-ResikProcessArgument $_ }) -join ' '
@@ -168,6 +184,7 @@ function Invoke-ResikNativeCommand {
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $FilePath
     $startInfo.Arguments = $arguments
+    if ($WorkingDirectory) { $startInfo.WorkingDirectory = $WorkingDirectory }
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardInput = $true

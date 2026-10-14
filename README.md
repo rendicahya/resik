@@ -2,7 +2,8 @@
 A safe, native PowerShell cleanup utility for Windows and developer-tool caches.
 
 > **Status: early development.** Resik cleans the caches of uv, pip, Poetry, Conda,
-> Hugging Face, npm, Composer, Scoop, Chocolatey, and NuGet, and Playwright's browsers.
+> Hugging Face, npm, pnpm, Yarn, Composer, Go, Scoop, Chocolatey, and NuGet, and
+> Playwright's browsers.
 > For Gradle, Maven, and JetBrains IDEs it only reports sizes. It never cleans
 > anything without showing you the plan first and asking for confirmation.
 
@@ -132,7 +133,11 @@ folders (or folders containing them), or symbolic links and junctions.
 | `huggingface` | Hugging Face Hub revisions no branch or tag uses, and interrupted downloads | `hf cache prune --yes --cache-dir <dir>` | Low |
 | `poetry` | Poetry's repository caches (package metadata and downloads) | `poetry cache clear <name> --all --no-interaction` per cache | Low |
 | `npm` | npm's package cache (`<cache>\_cacache`) | `npm cache clean --force` | Low |
+| `pnpm` | Packages in the pnpm store that no project uses | `pnpm store prune` | Low |
+| `yarn` | The global Yarn Classic (1.x) cache | `yarn cache clean` | Low |
 | `composer` | Composer's cache (packages, repository metadata, VCS clones) | `composer global clear-cache --no-interaction` | Low |
+| `go-build` | The Go build cache (`GOCACHE`) | `go clean -cache` | Low |
+| `go-modules` | Every downloaded Go module (`GOMODCACHE`) | `go clean -modcache` | Medium |
 | `playwright` | Browsers that Playwright downloaded | `playwright uninstall --all` | Medium |
 | `scoop-apps` | Old versions of installed Scoop apps | `scoop cleanup *` | Low |
 | `scoop-cache` | Installers in Scoop's download cache | `scoop cache rm *` | Low |
@@ -171,6 +176,19 @@ What these remove is downloaded again when needed. Details:
   Projects, lock files, and virtual environments are kept.
 - **npm:** only `_cacache` is removed; the npx cache and logs next to it, and
   every `node_modules` folder, are kept.
+- **pnpm:** the store comes from `pnpm store path`. Pruning keeps every package
+  a project still uses, and pnpm has no preview, so Resik shows the store's
+  size but no estimate; the measured result after cleaning is exact.
+- **yarn:** only Yarn 1 (Classic) is supported. Yarn 2 and later keep a cache
+  per project and are reported as not detected. The folder comes from
+  `yarn cache dir`.
+- **go-build, go-modules:** the folders come from `go env GOCACHE` and
+  `go env GOMODCACHE`. The build cache only speeds up builds and tests. The
+  module cache holds downloaded source, so builds download it again and fail
+  while offline; hence Medium risk. `GOCACHE=off` is skipped.
+- pnpm, Yarn, and Go run in your user profile folder, so a `package.json`,
+  `.npmrc`, `.yarnrc`, or `go.mod` in the folder you start Resik from cannot
+  change which cache is cleaned or make Go download another toolchain.
 - **composer:** needs `composer.bat` (Composer-Setup) or a `composer.cmd` shim
   (Scoop) on PATH. The folders come from `composer global config cache-dir`
   (and `cache-files-dir`, `cache-repo-dir`, `cache-vcs-dir`); `global` makes
@@ -240,7 +258,8 @@ Not detected: a Maven `localRepository` set only in the Maven installation's
 settings or with `-Dmaven.repo.local`, IDEs moved with `idea.system.path`, and
 Android Studio.
 
-Not supported: WinGet has no cache-cleaning command. pnpm and Yarn are planned.
+Not supported: WinGet has no cache-cleaning command, and Yarn 2 and later
+keep their caches per project.
 
 The picker needs a terminal. When input is redirected (for example in a
 scheduled task), `resik` without `--all` or `--only` exits with an error.
@@ -272,7 +291,8 @@ src/Resik/
     Deletion.ps1          link-safe folder deletion (used only by scoop-persist)
     Catalog.ps1           registered cleanup targets
   DeveloperCleanup/       one file per tool: Uv, Pip, Poetry, Conda,
-                          HuggingFace, Npm, Composer, Playwright, Scoop,
+                          HuggingFace, Npm, Pnpm, Yarn, Composer, Go,
+                          Playwright, Scoop,
                           Chocolatey, NuGet, and the
                           analysis-only Gradle, Maven, JetBrains
   Reporting/

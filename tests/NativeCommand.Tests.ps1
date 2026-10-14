@@ -66,6 +66,15 @@ Describe 'Invoke-ResikNativeCommand' {
         Get-ResikNativeCommandFailure $run | Should -BeLike '*exited with code 3. err'
     }
 
+    It 'starts the process in WorkingDirectory' {
+        $folder = (New-Item -ItemType Directory -Path (Join-Path $TestDrive 'work dir')).FullName
+
+        $run = Invoke-ResikNativeCommand -FilePath $script:powershellPath -WorkingDirectory $folder -ArgumentList @(
+            '-NoProfile', '-NonInteractive', '-Command', '[Environment]::CurrentDirectory')
+
+        $run.StdOut.Trim() | Should -BeExactly $folder
+    }
+
     It 'stops a process that exceeds its timeout' {
         $run = Invoke-ResikNativeCommand -FilePath $script:powershellPath -TimeoutSeconds 1 -ArgumentList @(
             '-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 30')
