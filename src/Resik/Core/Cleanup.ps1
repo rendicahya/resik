@@ -147,3 +147,65 @@ function Invoke-ResikTargetCleanup {
             -Duration $stopwatch.Elapsed
     }
 }
+
+function Invoke-ResikMeasuredDeletion {
+    <#
+    .SYNOPSIS
+        Deletes the matching items in a folder with Remove-ResikDirectoryContent
+        and measures the effect.
+    .DESCRIPTION
+        For targets with no cleanup command of their own. Returns an outcome for
+        a target's Clean scriptblock. Items in use are skipped: the result is
+        PartialSuccess when something was removed, else Failed. InUseHint is
+        added to the details when items were skipped.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Path,
+
+        [string] $Filter = '*',
+
+        [string] $InUseHint = ''
+    )
+
+    $issue = Get-ResikPathSafetyIssue -Path $Path
+    if ($issue) { throw "Refusing to clean: $issue" }
+    Write-Host "Deleting: $(Join-Path $Path $Filter)"
+
+    $spinner = Start-ResikSpinner -Message 'Measuring before cleaning'
+    try {
+        $before = Measure-ResikDirectoryContent -Path $Path -Filter $Filter
+        $freeBefore = Get-ResikFreeSpace -Path $Path
+        Set-ResikSpinnerMessage -Spinner $spinner -Message "Deleting files in $Path"
+        $deletion = Remove-ResikDirectoryContent -Path $Path -Filter $Filter -Confirm:$false
+        Set-ResikSpinnerMessage -Spinner $spinner -Message 'Measuring what was removed'
+        $after = Measure-ResikDirectoryContent -Path $Path -Filter $Filter
+        $freeAfter = Get-ResikFreeSpace -Path $Path
+    }
+    finally {
+        Stop-ResikSpinner -Spinner $spinner
+    }
+
+    $measured = if ($before.Unreadable -eq 0 -and $after.Unreadable -eq 0) { $before.Bytes - $after.Bytes } else { $null }
+    $freeChange = if ($null -ne $freeBefore -and $null -ne $freeAfter) { $freeAfter - $freeBefore } else { $null }
+    $errors = @($deletion.Errors)
+
+    if ($errors.Count -eq 0) {
+        $status = 'Success'
+        $details = "Deleted $($before.Files) file(s) in $Path"
+    }
+    else {
+        $removedFiles = [Math]::Max(0, $before.Files - $after.Files)
+        $status = if ($removedFiles -gt 0 -or ($null -ne $measured -and $measured -gt 0)) { 'PartialSuccess' } else { 'Failed' }
+        $details = "Deleted $removedFiles file(s) in $Path; $($errors.Count) item(s) could not be deleted, for example $($errors[0])"
+        if ($InUseHint) { $details += ". $InUseHint" }
+    }
+
+    [pscustomobject]@{
+        Status               = $status
+        Details              = $details
+        MeasuredBytes        = $measured
+        FreeSpaceChangeBytes = $freeChange
+    }
+}

@@ -1,7 +1,9 @@
 # resik
 A safe, native PowerShell cleanup utility for Windows and developer-tool caches.
 
-> **Status: early development.** Resik cleans the caches of uv, pip, Poetry, Conda,
+> **Status: early development.** Resik empties the Recycle Bin, clears the
+> DirectX shader and thumbnail caches, runs Windows Update cleanup, and cleans
+> the caches of uv, pip, Poetry, Conda,
 > Hugging Face, npm, pnpm, Yarn, Composer, Go, Scoop, Chocolatey, and NuGet, and
 > Playwright's browsers.
 > For Gradle, Maven, and JetBrains IDEs it only reports sizes. It never cleans
@@ -93,7 +95,7 @@ resik --version
 | `-h`, `--help` | Show usage and supported options. |
 | `-v`, `--version` | Show the Resik version. |
 | `-n`, `--dry-run` | Analyze targets without changing anything. With the picker, pick what to analyze. |
-| `-a`, `--all` | Select all targets except `scoop-persist`, without the picker. |
+| `-a`, `--all` | Select all targets except `recycle-bin` and `scoop-persist`, without the picker. |
 | `-o`, `--only <ids>` | Select specific target IDs (comma-separated), without the picker. |
 | `--non-interactive` | Never prompt. Requires `--all` or `--only`, and `--force` to clean. |
 | `--report-path <path>` | Write a JSON report. Not implemented yet; rejected with an error. |
@@ -124,6 +126,35 @@ error).
 With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
 
 ### Targets
+
+#### Windows
+
+| ID | What it cleans | How | Risk |
+| --- | --- | --- | --- |
+| `recycle-bin` | Your Recycle Bin on every drive | `Clear-RecycleBin -Force` | High |
+| `directx-shaders` | Compiled DirectX shaders in `%LOCALAPPDATA%\D3DSCache` | Resik deletes the folder's contents | Low |
+| `thumbnails` | File Explorer's thumbnail cache (`thumbcache_*.db`) | Resik deletes the matching files | Low |
+| `windows-update` | Component-store copies of updates that newer updates replaced | `Dism.exe /Online /Cleanup-Image /StartComponentCleanup` | Medium |
+
+- **recycle-bin:** the deleted files cannot be restored afterwards, so `--all`
+  and "select all" in the picker never choose it; name it with
+  `--only recycle-bin` or select it yourself. The size comes from your own
+  `<drive>:\$Recycle.Bin\<SID>` folders; other users' bins are not touched.
+- **directx-shaders, thumbnails:** Windows has no command for these, so Resik
+  deletes the files itself, the same ones Disk Cleanup removes. Links are not
+  followed, and files in use (by a running game, or by File Explorer, which
+  keeps some thumbnail files open) are skipped and reported. Windows rebuilds
+  both caches: games may stutter the first time, and folders show thumbnails
+  again as you browse. The icon cache and driver shader caches (NVIDIA, AMD)
+  are not touched.
+- **windows-update:** needs administrator rights. Resik never elevates itself,
+  so without them this target is report-only; open a terminal with "Run as
+  administrator" to clean it. DISM cannot preview what it will remove, so no
+  estimate is shown; the result is the change in free space on the system
+  drive. `/ResetBase` is never used, so installed updates can still be
+  uninstalled. It can take 10 minutes or more.
+
+#### Developer tools
 
 Every target in the table below cleans through the tool's own documented
 command; Resik does not delete those cache files itself. Before running it, Resik asks the tool where its
@@ -293,8 +324,9 @@ src/Resik/
     NativeCommand.ps1     runs external tools with captured output and timeouts
     FileSystem.ps1        path safety checks, size and free-space measurement
     Cleanup.ps1           cleanup with per-target isolation
-    Deletion.ps1          link-safe folder deletion (used only by scoop-persist)
+    Deletion.ps1          link-safe deletion (scoop-persist and Windows caches)
     Catalog.ps1           registered cleanup targets
+  WindowsCleanup/         RecycleBin, ShaderCache, ThumbnailCache, WindowsUpdate
   DeveloperCleanup/       one file per tool: Uv, Pip, Poetry, Conda,
                           HuggingFace, Npm, Pnpm, Yarn, Composer, Go,
                           Playwright, Scoop,

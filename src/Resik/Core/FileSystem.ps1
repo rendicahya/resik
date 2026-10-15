@@ -165,3 +165,52 @@ function Get-ResikFreeSpace {
         $null
     }
 }
+
+function Measure-ResikDirectoryContent {
+    # Like Measure-ResikDirectory, but counts only the items directly inside
+    # Path whose names match Filter (and everything under them). A missing
+    # folder counts as empty.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Path,
+
+        [string] $Filter = '*'
+    )
+
+    $bytes = [long]0
+    $files = 0
+    $unreadable = 0
+    $directory = New-Object System.IO.DirectoryInfo $Path
+    if ($directory.Exists) {
+        try {
+            $entries = @($directory.GetFileSystemInfos($Filter))
+        }
+        catch {
+            $entries = @()
+            $unreadable++
+        }
+        foreach ($entry in $entries) {
+            if ($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { continue }
+            if ($entry -is [System.IO.DirectoryInfo]) {
+                $size = Measure-ResikDirectory -Path $entry.FullName
+                $bytes += $size.Bytes
+                $files += $size.Files
+                $unreadable += $size.Unreadable
+            }
+            else {
+                $bytes += $entry.Length
+                $files++
+            }
+        }
+    }
+    [pscustomobject]@{ Bytes = $bytes; Files = $files; Unreadable = $unreadable }
+}
+
+function Get-ResikLocalAppDataPath {
+    # %LOCALAPPDATA%, as a function so tests can point it at TestDrive.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+    [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+}

@@ -8,6 +8,10 @@ function Get-ResikTargetCatalog {
     [CmdletBinding()]
     param()
 
+    New-ResikRecycleBinTarget
+    New-ResikShaderCacheTarget
+    New-ResikThumbnailCacheTarget
+    New-ResikWindowsUpdateTarget
     New-ResikUvTarget
     New-ResikPipTarget
     New-ResikPoetryTarget

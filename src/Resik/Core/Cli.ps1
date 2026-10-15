@@ -15,8 +15,11 @@ function Get-ResikHelpText {
         if ($option.ValueName) { $names += " $($option.ValueName)" }
         '  {0,-26}{1}' -f $names, $option.Description
     }
-    $targetLines = foreach ($target in @(Get-ResikTargetCatalog)) {
-        '  {0,-14}{1}' -f $target.Id, $target.Name
+    # The ID column fits the longest ID, so a long one never runs into its name.
+    $catalog = @(Get-ResikTargetCatalog)
+    $idWidth = (@($catalog | ForEach-Object { $_.Id.Length }) | Measure-Object -Maximum).Maximum + 2
+    $targetLines = foreach ($target in $catalog) {
+        "  {0,-$idWidth}{1}" -f $target.Id, $target.Name
     }
 
     @"
@@ -43,9 +46,10 @@ Before cleaning, Resik shows what will be removed and asks
 "Clean these targets? [y/N]". --force skips only that question. With
 --non-interactive, or when input is redirected, cleanup requires --force.
 
-scoop-persist deletes app data and is never chosen by --all or by "select
-all". It asks about each folder, even with --force, and removes nothing
-without a terminal.
+recycle-bin and scoop-persist delete files that cannot be recovered and are
+never chosen by --all or by "select all". scoop-persist asks about each
+folder, even with --force, and removes nothing without a terminal.
+windows-update needs administrator rights; Resik never elevates itself.
 "@
 }
 

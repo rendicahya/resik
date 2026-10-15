@@ -121,3 +121,57 @@ function Remove-ResikDirectoryTree {
     $root.Refresh()
     [pscustomobject]@{ Removed = -not $root.Exists; Errors = $errors.ToArray() }
 }
+
+function Remove-ResikDirectoryContent {
+    <#
+    .SYNOPSIS
+        Deletes the items directly inside a folder whose names match Filter,
+        and everything under them, without following links.
+    .DESCRIPTION
+        Path must pass Get-ResikPathSafetyIssue and must not be a link; the
+        folder itself is kept. Subfolders go through Remove-ResikDirectoryTree
+        with Path as the scope, and a link is removed as a link. Items that
+        cannot be deleted (in use, access denied) are skipped and reported in
+        Errors.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Path,
+
+        [string] $Filter = '*'
+    )
+
+    $issue = Get-ResikPathSafetyIssue -Path $Path
+    if ($issue) { throw "Refusing to delete: $issue" }
+
+    $full = [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $root = New-Object System.IO.DirectoryInfo $full
+    if (-not $root.Exists) { return [pscustomobject]@{ Errors = @() } }
+    if (-not $PSCmdlet.ShouldProcess($full, "Delete the items matching '$Filter'")) {
+        return [pscustomobject]@{ Errors = @() }
+    }
+
+    $errors = New-Object 'System.Collections.Generic.List[string]'
+    $readOnly = [System.IO.FileAttributes]::ReadOnly
+    foreach ($child in @($root.GetFileSystemInfos($Filter))) {
+        try {
+            if ($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                # Removes the link only; its target is left alone.
+                $child.Delete()
+            }
+            elseif ($child -is [System.IO.DirectoryInfo]) {
+                $tree = Remove-ResikDirectoryTree -Path $child.FullName -Scope $full -Confirm:$false
+                foreach ($line in @($tree.Errors)) { $errors.Add($line) }
+            }
+            else {
+                if ($child.Attributes -band $readOnly) { $child.Attributes = $child.Attributes -band (-bnot $readOnly) }
+                $child.Delete()
+            }
+        }
+        catch {
+            $errors.Add("$($child.FullName): $(Get-ResikExceptionReason $_)")
+        }
+    }
+    [pscustomobject]@{ Errors = $errors.ToArray() }
+}
