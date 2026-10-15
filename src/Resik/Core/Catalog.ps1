@@ -29,6 +29,7 @@ function Get-ResikTargetCatalog {
     New-ResikScoopPersistTarget
     New-ResikChocolateyTarget
     New-ResikNuGetTarget
+    New-ResikJetBrainsLeftoverTarget
     # Analysis only: these report sizes and are never cleaned.
     New-ResikGradleTarget
     New-ResikMavenTarget

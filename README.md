@@ -94,7 +94,7 @@ resik --version
 | `-h`, `--help` | Show usage and supported options. |
 | `-v`, `--version` | Show the Resik version. |
 | `-n`, `--dry-run` | Analyze targets without changing anything. With the picker, pick what to analyze. |
-| `-a`, `--all` | Select all targets except `recycle-bin` and `scoop-persist`, without the picker. |
+| `-a`, `--all` | Select all targets except `recycle-bin`, `scoop-persist`, and `jetbrains-leftovers`, without the picker. |
 | `-o`, `--only <ids>` | Select specific target IDs (comma-separated), without the picker. |
 | `--non-interactive` | Never prompt. Requires `--all` or `--only`, and `--force` to clean. |
 | `--report-path <path>` | Write a JSON report. Not implemented yet; rejected with an error. |
@@ -260,11 +260,17 @@ What these remove is downloaded again when needed. Details:
 | ID | What it removes | How | Risk |
 | --- | --- | --- | --- |
 | `scoop-persist` | Folders in `<scoop>\persist` of apps that are no longer installed | Resik deletes each folder you confirm | High |
+| `jetbrains-leftovers` | All data of JetBrains IDE versions, typically ones you uninstalled | Resik deletes each version you confirm | High |
+
+Neither tool has a command to remove this data, so Resik deletes it itself. It
+cannot be recovered, and `--all` and "select all" in the picker never choose
+these targets; name them with `--only` or select them yourself. During cleanup
+Resik asks about each folder or version separately. `--force` does not answer
+these questions, and without a terminal nothing is removed.
 
 When you uninstall a Scoop app without `--purge`, Scoop keeps its settings and
 data in `<scoop>\persist\<app>` so a reinstall can reuse them. Scoop has no
-command to remove that data once the app is gone, so this is the one target
-where Resik deletes files itself:
+command to remove that data once the app is gone:
 
 - A folder counts as leftover when `<scoop>\apps` has no folder of that name.
   Links in `persist` are ignored, and global apps are not checked.
@@ -278,6 +284,24 @@ where Resik deletes files itself:
   `persist`. Files that are in use are skipped and reported.
 - This data cannot be downloaded again. For some portable apps it is
   everything you saved in them.
+
+Each JetBrains IDE version keeps `%LOCALAPPDATA%\JetBrains\<product><version>`
+(caches, indexes, logs, plugins, and Local History) and
+`%APPDATA%\JetBrains\<product><version>` (settings and plugins). Uninstalling
+the IDE leaves both behind:
+
+- `jetbrains-leftovers` offers every version folder, such as
+  `PyCharm2024.1`, with both folders together. Resik cannot tell whether a
+  version is still installed, because portable and Toolbox installs leave no
+  record, so check the name before you answer `y`. Help \| Delete Leftover IDE
+  Directories in a newer IDE does the same for old versions.
+- Resik refuses to delete anything while a JetBrains IDE is running, and checks
+  again after each answer.
+- Everything for that version goes, including its settings and Local History
+  (the IDE's record of your past edits). Other folders in `JetBrains`, such as
+  Toolbox's, are not touched.
+- The deletion never follows symbolic links or junctions, and stays inside the
+  two `JetBrains` folders.
 
 #### Analysis only
 
@@ -325,14 +349,15 @@ src/Resik/
     NativeCommand.ps1     runs external tools with captured output and timeouts
     FileSystem.ps1        path safety checks, size and free-space measurement
     Cleanup.ps1           cleanup with per-target isolation
-    Deletion.ps1          link-safe deletion (scoop-persist and Windows caches)
+    Deletion.ps1          link-safe deletion (leftover data and Windows caches)
     Catalog.ps1           registered cleanup targets
   WindowsCleanup/         RecycleBin, ShaderCache, ThumbnailCache, WindowsUpdate
   DeveloperCleanup/       one file per tool: Uv, Pip, Poetry, Conda,
                           HuggingFace, Npm, Pnpm, Yarn, Composer, Go,
                           Playwright, Scoop,
-                          Chocolatey, NuGet, and the
-                          analysis-only Gradle, Maven, JetBrains
+                          Chocolatey, NuGet, JetBrains (the analysis-only
+                          jetbrains and jetbrains-leftovers), and the
+                          analysis-only Gradle, Maven
   Reporting/
     ConsoleReport.ps1     console summaries
   UI/

@@ -23,7 +23,7 @@ function Get-ResikOptionSpec {
     New-ResikOptionSpec Help '--help' '-h' '' 'Show this help.'
     New-ResikOptionSpec Version '--version' '-v' '' 'Show the Resik version.'
     New-ResikOptionSpec DryRun '--dry-run' '-n' '' 'Analyze targets without changing anything.'
-    New-ResikOptionSpec All '--all' '-a' '' 'Select all targets except recycle-bin and scoop-persist (skips the picker).'
+    New-ResikOptionSpec All '--all' '-a' '' 'Select all targets except the High-risk deletions (skips the picker).'
     New-ResikOptionSpec Only '--only' '-o' '<ids>' 'Select specific target IDs, comma-separated (skips the picker).'
     New-ResikOptionSpec NonInteractive '--non-interactive' '' '' 'Never prompt; needs --all or --only, and --force to clean.'
     New-ResikOptionSpec ReportPath '--report-path' '' '<path>' 'Write a JSON report (not available yet).'

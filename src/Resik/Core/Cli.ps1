@@ -46,9 +46,10 @@ Before cleaning, Resik shows what will be removed and asks
 "Clean these targets? [y/N]". --force skips only that question. With
 --non-interactive, or when input is redirected, cleanup requires --force.
 
-recycle-bin and scoop-persist delete files that cannot be recovered and are
-never chosen by --all or by "select all". scoop-persist asks about each
-folder, even with --force, and removes nothing without a terminal.
+recycle-bin, scoop-persist, and jetbrains-leftovers delete files that cannot
+be recovered and are never chosen by --all or by "select all". scoop-persist
+and jetbrains-leftovers ask about each folder or IDE version, even with
+--force, and remove nothing without a terminal.
 windows-update needs administrator rights; Resik never elevates itself.
 "@
 }
