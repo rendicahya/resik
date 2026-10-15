@@ -31,6 +31,7 @@ $resikSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'src\Resik'
 . (Join-Path $resikSource 'DeveloperCleanup\NuGet.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Conda.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\HuggingFace.ps1')
+. (Join-Path $resikSource 'DeveloperCleanup\PyTorch.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Playwright.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Gradle.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Maven.ps1')

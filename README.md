@@ -4,8 +4,8 @@ A safe, native PowerShell cleanup utility for Windows and developer-tool caches.
 > **Status: early development.** Resik empties the Recycle Bin, clears the
 > DirectX shader and thumbnail caches, runs Windows Update cleanup, and cleans
 > the caches of uv, pip, Poetry, Conda,
-> Hugging Face, npm, pnpm, Yarn, Composer, Go, Scoop, Chocolatey, and NuGet, and
-> Playwright's browsers.
+> Hugging Face, PyTorch Inductor, Triton, npm, pnpm, Yarn, Composer, Go, Scoop,
+> Chocolatey, and NuGet, and Playwright's browsers.
 > For Gradle, Maven, and JetBrains IDEs it only reports sizes. It never cleans
 > anything without showing you the plan first and asking for confirmation.
 
@@ -255,6 +255,25 @@ What these remove is downloaded again when needed. Details:
   directly from it, and neither is NuGet's temp folder, which coordinates
   running restores.
 
+#### Compilation caches
+
+PyTorch and Triton have no command to clear their caches, so Resik deletes the
+contents of the cache folder itself, without following links, and keeps the
+folder. The kernels are compiled again on the next run, which is slower once.
+
+| ID | What it removes | Folder | Risk |
+| --- | --- | --- | --- |
+| `torch-inductor` | Kernels compiled by `torch.compile` (TorchInductor), including its Triton kernels | `%TEMP%\torchinductor_<user>` | Low |
+| `triton` | GPU kernels compiled by Triton | `~\.triton\cache`, or `<TRITON_HOME>\.triton\cache` | Low |
+
+- If `TORCHINDUCTOR_CACHE_DIR` or `TRITON_CACHE_DIR` moves a cache, Resik only
+  reports its size, because a folder you chose could hold other files. Delete
+  its contents yourself if it holds only the cache.
+- `.triton\override` (kernels you replaced by hand) and `.triton\dump` are
+  never touched.
+- Kernels loaded by a running Python program are skipped and reported; close
+  it and run Resik again.
+
 #### Leftover app data (chosen one by one)
 
 | ID | What it removes | How | Risk |
@@ -353,7 +372,8 @@ src/Resik/
     Catalog.ps1           registered cleanup targets
   WindowsCleanup/         RecycleBin, ShaderCache, ThumbnailCache, WindowsUpdate
   DeveloperCleanup/       one file per tool: Uv, Pip, Poetry, Conda,
-                          HuggingFace, Npm, Pnpm, Yarn, Composer, Go,
+                          HuggingFace, PyTorch (torch-inductor, triton),
+                          Npm, Pnpm, Yarn, Composer, Go,
                           Playwright, Scoop,
                           Chocolatey, NuGet, JetBrains (the analysis-only
                           jetbrains and jetbrains-leftovers), and the

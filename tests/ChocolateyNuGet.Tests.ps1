@@ -115,8 +115,10 @@ Describe 'Target catalog' {
 
     It 'gives every target a unique ID, and Clean to all but the analysis-only ones' {
         Mock Test-ResikAdministrator { $true }
+        Mock Get-ResikTorchInductorCacheLocation { New-ResikCacheLocation -Path 'C:\t\torchinductor_u' }
+        Mock Get-ResikTritonCacheLocation { New-ResikCacheLocation -Path 'C:\u\.triton\cache' }
         $catalog = @(Get-ResikTargetCatalog)
-        $catalog.Count | Should -Be 25
+        $catalog.Count | Should -Be 27
         @($catalog | Where-Object { $null -eq $_.Clean } | ForEach-Object { $_.Id }) | Should -Be @('gradle', 'maven', 'jetbrains')
         @($catalog.Id | Select-Object -Unique).Count | Should -Be $catalog.Count
     }

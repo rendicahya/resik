@@ -33,6 +33,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'DeveloperCleanup\NuGet.ps1')
 . (Join-Path $PSScriptRoot 'DeveloperCleanup\Conda.ps1')
 . (Join-Path $PSScriptRoot 'DeveloperCleanup\HuggingFace.ps1')
+. (Join-Path $PSScriptRoot 'DeveloperCleanup\PyTorch.ps1')
 . (Join-Path $PSScriptRoot 'DeveloperCleanup\Playwright.ps1')
 . (Join-Path $PSScriptRoot 'DeveloperCleanup\Gradle.ps1')
 . (Join-Path $PSScriptRoot 'DeveloperCleanup\Maven.ps1')

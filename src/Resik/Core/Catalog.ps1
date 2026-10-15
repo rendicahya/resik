@@ -17,6 +17,8 @@ function Get-ResikTargetCatalog {
     New-ResikPoetryTarget
     New-ResikCondaTarget
     New-ResikHuggingFaceTarget
+    New-ResikTorchInductorTarget
+    New-ResikTritonTarget
     New-ResikNpmTarget
     New-ResikPnpmTarget
     New-ResikYarnTarget
