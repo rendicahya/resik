@@ -269,8 +269,9 @@ Describe 'Invoke-ResikCli cleanup' {
 
         Should -Invoke Read-ResikConfirmation -Times 1 -Exactly
         $script:cleaned | Should -Be @('fake')
-        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '  fake  *Cleaned*' }
-        Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'Measured cache reduction: 100 B*' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'Cleaned *Removed  Free space' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '  fake  Fake fake  *100 B*' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'Measured cache reduction:  100 B*' }
     }
 
     It 'shows the plan before asking' {
@@ -344,7 +345,8 @@ Describe 'Invoke-ResikCli cleanup' {
         Invoke-ResikCli -Arguments @('--all', '--force') -Targets $targets | Should -Be 1
 
         $script:cleaned | Should -Be @('good')
-        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '  bad  *Failed*' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -eq 'Failed' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -eq '  bad   Fake bad' }
         Should -Invoke Write-Host -ParameterFilter { "$Object" -eq '    Cleanup failed: boom' }
     }
 
@@ -407,11 +409,19 @@ Describe 'Resik.ps1 entry point' {
     }
 
     It 'runs a read-only dry run of the registered targets' {
-        # Only inspection runs: uv is skipped if missing, otherwise analyzed.
+        # Only inspection runs. Tools that are not installed are left out.
         $run = Invoke-ResikProcess -Arguments '--non-interactive', '-n', '-a'
         $run.ExitCode | Should -Be 0
         $run.Output | Should -BeLike '*Dry run:*'
-        $run.Output | Should -Match '(?m)^(  uv\s|Not found: (.*, )?uv(,|\r?$))'
+        $run.Output | Should -Match '(?m)^(Total you can reclaim|Nothing to clean)'
+        $run.Output | Should -Not -BeLike '*Not found:*'
+    }
+
+    It 'names a tool that is not installed when it was asked for with --only' {
+        # uv is either analyzed or named as not found.
+        $run = Invoke-ResikProcess -Arguments '--non-interactive', '-n', '-o', 'uv'
+        $run.ExitCode | Should -Be 0
+        $run.Output | Should -Match '(?m)^(  uv\s|Not found: uv\r?$)'
     }
 
     It 'refuses to clean without --force when input is redirected, without cleaning anything' {

@@ -33,10 +33,9 @@ Describe 'New-ResikPickerState' {
         $state.Cursor | Should -Be 0
     }
 
-    It 'lists cleanable targets by size, then report-only ones, and moves missing tools to NotFound' {
+    It 'lists cleanable targets by size, then report-only ones, and leaves out missing tools' {
         $state = New-TestPickerState
         @($state.Items | ForEach-Object { $_.Target.Id }) | Should -Be @('uv', 'pip', 'conda')
-        $state.NotFound | Should -Be @('scoop')
         $state.Items[2].Note | Should -BeExactly 'report only'
         $state.Items[0].Note | Should -BeExactly ''
         $state.Items[0].Details | Should -BeExactly 'C:\uv\cache'
@@ -114,7 +113,7 @@ Describe 'Invoke-ResikPickerKey' {
 }
 
 Describe 'Format-ResikPickerScreen' {
-    It 'shows checkboxes, the cursor, missing tools, details, and the selected total' {
+    It 'shows checkboxes, the cursor, details, and the selected total, but not missing tools' {
         $state = New-TestPickerState
         $state.Items[0].Selected = $true
         $state.Items[1].Selected = $true
@@ -131,7 +130,6 @@ Describe 'Format-ResikPickerScreen' {
             '  [x] pip    Fake pip       1.0 KB  Low'
             '  [-] conda  Fake conda     4.0 KB  Low     report only'
             ''
-            '  Not found: scoop'
             '  C:\uv\cache'
             '  Selected: 2 targets, about 3.0 KB'
         )
@@ -153,7 +151,7 @@ Describe 'Format-ResikPickerScreen' {
         Invoke-ResikPickerKey -State $state -Command Down | Out-Null
         Invoke-ResikPickerKey -State $state -Command All | Out-Null
         @(Format-ResikPickerScreen -State $state).Count | Should -Be $before
-        $before | Should -Be ($state.Items.Count + 8)
+        $before | Should -Be ($state.Items.Count + 7)
     }
 }
 
@@ -182,7 +180,7 @@ Describe 'Show-ResikTargetPicker' {
 
         Show-ResikTargetPicker -State $state | Should -BeExactly 'Cancel'
 
-        Should -Invoke Move-ResikConsoleCursor -Times 1 -Exactly -ParameterFilter { $Row -eq (50 - ($state.Items.Count + 8)) }
+        Should -Invoke Move-ResikConsoleCursor -Times 1 -Exactly -ParameterFilter { $Row -eq (50 - ($state.Items.Count + 7)) }
     }
 }
 

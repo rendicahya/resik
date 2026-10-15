@@ -62,15 +62,14 @@ Up/Down move   Space select   A all   N none   Enter confirm   Q cancel
   [ ] choco        Chocolatey HTTP cache       ?  Low
   [-] jetbrains    JetBrains IDE caches 520.4 MB  Low     report only
 
-  Not found: poetry, conda, pnpm, yarn, go-build, go-modules, nuget
   ~\AppData\Local\uv\cache (5145 files)
   Selected: 2 targets, about 2.3 GB
 ```
 
 Targets that can be cleaned come first, largest first. Targets whose analysis
 failed, or that Resik only measures (see [Analysis only](#analysis-only)), are
-shown as `[-]` and cannot be selected; tools that are not installed are listed
-on one line below. `?` means the size cannot be measured in advance, and `~` is
+shown as `[-]` and cannot be selected; tools that are not installed are not
+shown. `?` means the size cannot be measured in advance, and `~` is
 your user profile folder. The line under the list shows details for the target
 under the cursor.
 Nothing is selected at first. After you press Enter, Resik shows what it will
@@ -109,7 +108,8 @@ error).
 
 1. Resik analyzes the targets and shows the estimated size of each, either in
    the picker or, with `--all` or `--only`, as a report grouped into targets
-   ready to clean, report-only targets, and tools that were not found. Measuring large caches
+   ready to clean and report-only targets. Tools that are not installed are
+   left out, except that `--only` names the ones you asked for. Measuring large caches
    can take a while, so a spinner shows which target is being analyzed and for
    how long.
 2. It lists what will be cleaned, where, and the consequences.
@@ -119,8 +119,9 @@ error).
 4. Each target is cleaned independently; one failure does not stop the others.
    Resik prints the command it runs, and a spinner shows that it is still
    working while the command runs and while Resik measures the result.
-5. Resik reports the measured cache reduction and the change in free disk space
-   separately. They can differ, because files hard-linked into environments stay
+5. Resik reports the results grouped into cleaned, partly cleaned, failed, and
+   not cleaned targets, with the measured cache reduction and the change in
+   free disk space shown separately. They can differ, because files hard-linked into environments stay
    on disk, and other programs write to the disk at the same time.
 
 With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.

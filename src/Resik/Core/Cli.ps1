@@ -132,7 +132,8 @@ function Invoke-ResikCli {
     }
     $analysis = @(Invoke-ResikAnalysisWithSpinner -Targets $selected)
     Write-Host ''
-    foreach ($line in (Format-ResikSummary -Results $analysis -Targets $selected -Width (Get-ResikReportWidth))) {
+    # Tools that are not installed are named only when the user asked for them.
+    foreach ($line in (Format-ResikSummary -Results $analysis -Targets $selected -Width (Get-ResikReportWidth) -ShowNotFound:$hasOnly)) {
         Write-Host $line
     }
     $analysisFailed = @($analysis | Where-Object { $_.Status -eq 'Failed' }).Count -gt 0
@@ -311,7 +312,7 @@ function Invoke-ResikCleanupStep {
         })
 
     Write-Host ''
-    foreach ($line in (Format-ResikCleanupSummary -Results $results -Width (Get-ResikReportWidth))) {
+    foreach ($line in (Format-ResikCleanupSummary -Results $results -Targets $eligible -Width (Get-ResikReportWidth))) {
         Write-Host $line
     }
 

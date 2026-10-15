@@ -57,7 +57,7 @@ Describe 'Format-ResikSummary' {
         $script:clean = { }
     }
 
-    It 'groups targets, sorts the cleanable ones by size, and names missing tools once' {
+    It 'groups targets, sorts the cleanable ones by size, and leaves out missing tools' {
         $targets = @(
             (New-TestTarget -Id 'small' -Clean $script:clean),
             (New-TestTarget -Id 'gone' -Clean $script:clean),
@@ -97,11 +97,24 @@ Describe 'Format-ResikSummary' {
             '  broken (Failed)'
             '    Analysis failed: boom'
             ''
-            'Not found: gone'
-            ''
             'Total you can reclaim: about 5.0 KB (estimate only; nothing was removed)'
             '1 target could not be measured in advance (shown as ?).'
         )
+    }
+
+    It 'names missing tools once with ShowNotFound' {
+        $targets = @((New-TestTarget -Id 'small' -Clean $script:clean), (New-TestTarget -Id 'a-long-missing-id' -Clean $script:clean))
+        $results = @(
+            (New-ResikResult -TargetId 'small' -Operation Analyze -Status AnalysisOnly -EstimatedBytes 1024),
+            (New-ResikResult -TargetId 'a-long-missing-id' -Operation Analyze -Status Skipped -Message 'Not detected: missing.')
+        )
+
+        $hidden = @(Format-ResikSummary -Results $results -Targets $targets)
+        $shown = @(Format-ResikSummary -Results $results -Targets $targets -ShowNotFound)
+
+        ($hidden -join "`n") | Should -Not -BeLike '*a-long-missing-id*'
+        $hidden[1] | Should -BeExactly '  small  Fake small  1.0 KB  Low'
+        $shown | Should -Contain 'Not found: a-long-missing-id'
     }
 
     It 'cuts details to fit the width' {
@@ -153,20 +166,47 @@ Describe 'Format-ResikCleanupPlan' {
 }
 
 Describe 'Format-ResikCleanupSummary' {
-    It 'separates measured cache reduction from the change in free space' {
+    It 'groups results, sorts cleaned targets by what was removed, and hides routine details' {
+        $targets = @('a', 'big', 'unsized', 'part', 'b', 'off') | ForEach-Object { New-TestTarget -Id $_ }
         $results = @(
-            (New-ResikResult -TargetId 'a' -Operation Clean -Status Success -EstimatedBytes 4096 -MeasuredBytes 2048 -FreeSpaceChangeBytes 1024),
-            (New-ResikResult -TargetId 'b' -Operation Clean -Status Failed -Message 'Cleanup failed: boom')
+            (New-ResikResult -TargetId 'a' -Operation Clean -Status Success -EstimatedBytes 4096 -MeasuredBytes 2048 -FreeSpaceChangeBytes 1024 -Message 'Ran: tool clean'),
+            (New-ResikResult -TargetId 'big' -Operation Clean -Status Success -MeasuredBytes 8192 -FreeSpaceChangeBytes -512 -Message 'Deleted 3 file(s) in C:\cache'),
+            (New-ResikResult -TargetId 'unsized' -Operation Clean -Status Success -Message 'Deleted: old-app. Kept: other-app'),
+            (New-ResikResult -TargetId 'part' -Operation Clean -Status PartialSuccess -MeasuredBytes 100 -FreeSpaceChangeBytes 100 -Message 'Deleted 1 file(s) in C:\x; 1 item(s) could not be deleted'),
+            (New-ResikResult -TargetId 'b' -Operation Clean -Status Failed -Message 'Cleanup failed: boom'),
+            (New-ResikResult -TargetId 'off' -Operation Clean -Status Skipped -Message 'Nothing to clean.')
         )
 
-        $lines = @(Format-ResikCleanupSummary -Results $results)
-        $text = $lines -join "`n"
+        $lines = @(Format-ResikCleanupSummary -Results $results -Targets $targets)
 
-        $lines | Should -Contain '  a       Cleaned             2.0 KB      1.0 KB'
-        $lines | Should -Contain '    Cleanup failed: boom'
-        $text | Should -BeLike '*Measured cache reduction: 2.0 KB (1 target could not be measured)*'
-        $text | Should -BeLike '*Change in free disk space: 1.0 KB (1 target could not be measured)*'
-        $text | Should -Not -BeLike '*4.0 KB*'
+        $lines | Should -Be @(
+            'Cleaned                  Removed  Free space'
+            '  big      Fake big       8.0 KB      -512 B'
+            '  a        Fake a         2.0 KB      1.0 KB'
+            '  unsized  Fake unsized        ?           ?'
+            '    Deleted: old-app. Kept: other-app'
+            ''
+            'Partly cleaned           Removed  Free space'
+            '  part     Fake part       100 B       100 B'
+            '    Deleted 1 file(s) in C:\x; 1 item(s) could not be deleted'
+            ''
+            'Failed'
+            '  b        Fake b'
+            '    Cleanup failed: boom'
+            ''
+            'Not cleaned'
+            '  off      Fake off'
+            '    Nothing to clean.'
+            ''
+            'Measured cache reduction:  10.1 KB (2 targets not measured)'
+            'Change in free disk space: 612 B (2 targets not measured)'
+            'The two can differ: other programs also write to the disk, and hard-linked files stay on it.'
+        )
+    }
+
+    It 'never shows an estimate as a measurement' {
+        $results = @(New-ResikResult -TargetId 'a' -Operation Clean -Status Success -EstimatedBytes 4096)
+        (Format-ResikCleanupSummary -Results $results) -join "`n" | Should -Not -BeLike '*4.0 KB*'
     }
 
     It 'says nothing was cleaned when every target was skipped' {

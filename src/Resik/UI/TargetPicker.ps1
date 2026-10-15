@@ -42,10 +42,9 @@ function New-ResikPickerState {
         [object[]] $Analysis = @()
     )
 
-    # Cleanable targets come first, largest first. Tools that were not found
-    # get no row; their IDs are listed once below the list (NotFound).
+    # Cleanable targets come first, largest first. Tools that are not
+    # installed are left out.
     $items = New-Object System.Collections.Generic.List[object]
-    $notFound = New-Object System.Collections.Generic.List[string]
     $order = 0
     foreach ($target in $Targets) {
         $order++
@@ -67,10 +66,7 @@ function New-ResikPickerState {
                 default { if ($result.Status -eq 'Failed') { 'analysis failed' } else { "$($result.Status)" } }
             }
         }
-        if ($group -eq 'NotFound') {
-            $notFound.Add($target.Id)
-            continue
-        }
+        if ($group -eq 'NotFound') { continue }
 
         $items.Add([pscustomobject]@{
                 Target         = $target
@@ -90,9 +86,8 @@ function New-ResikPickerState {
         Order)
 
     [pscustomobject]@{
-        Items    = $sorted
-        NotFound = $notFound.ToArray()
-        Cursor   = 0
+        Items  = $sorted
+        Cursor = 0
     }
 }
 
@@ -242,11 +237,6 @@ function Format-ResikPickerScreen {
     }
 
     & $addLine ''
-    if ($State.NotFound.Count -gt 0) {
-        foreach ($line in @(Split-ResikText "Not found: $($State.NotFound -join ', ')" -Width $limit -Indent '  ')) {
-            & $addLine $line 'DarkGray'
-        }
-    }
     $current = if ($State.Items.Count -gt 0) { $State.Items[$State.Cursor] } else { $null }
     $details = if ($null -ne $current) { $current.Details } else { '' }
     & $addLine "  $details" 'DarkGray'
@@ -385,10 +375,6 @@ function Read-ResikNumberedSelection {
     foreach ($item in $State.Items) {
         $label = if ($item.Selectable) { $number++; '{0,3})' -f $number } else { '   -' }
         Write-Host "$label $(Format-ResikPickerRow $item -IdWidth $columns.IdWidth -NameWidth $columns.NameWidth)"
-    }
-    if ($State.NotFound.Count -gt 0) {
-        Write-Host ''
-        Write-Host "Not found: $($State.NotFound -join ', ')"
     }
     Write-Host ''
     if ($selectable.Count -eq 0) {
