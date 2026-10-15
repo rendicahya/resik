@@ -225,6 +225,8 @@ Describe 'uv target with the real uv' {
 
         $result.Status | Should -BeExactly 'Success'
         $result.MeasuredBytes | Should -BeGreaterThan 4095
-        $cache | Should -Not -Exist
+        # uv 0.13 and later keep the folder with only its .lock file.
+        @(Get-ChildItem -LiteralPath $cache -Recurse -Force -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -ne '.lock' }).Count | Should -Be 0
     }
 }
