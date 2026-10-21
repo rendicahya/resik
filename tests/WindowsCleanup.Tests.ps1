@@ -136,6 +136,113 @@ Describe 'thumbnails target' {
     }
 }
 
+Describe 'screenshots target' {
+    BeforeEach {
+        $script:shots = Join-Path (New-TestFolder) 'Screenshots'
+        New-TestFile -Path (Join-Path $script:shots 'Screenshot 1.png') -Size 700
+        New-TestFile -Path (Join-Path $script:shots 'Screenshot 2.JPG') -Size 300
+        New-TestFile -Path (Join-Path $script:shots 'desktop.ini') -Size 50
+        New-TestFile -Path (Join-Path $script:shots 'notes.txt') -Size 40
+        New-TestFile -Path (Join-Path $script:shots 'Album\kept.png') -Size 900
+        Mock Get-ResikScreenshotsFolder { $script:shots }
+        Mock Get-ResikOneDriveFolder {}
+        Mock Write-Host {}
+    }
+
+    It 'is never chosen by --all' {
+        $target = New-ResikScreenshotsTarget
+        $target.ExplicitOnly | Should -BeTrue
+        $target.RiskLevel | Should -BeExactly 'High'
+        @(Resolve-ResikSelection -Targets @($target) -All).Count | Should -Be 0
+    }
+
+    It 'is not detected without a Screenshots folder' {
+        Mock Get-ResikScreenshotsFolder { $null }
+        (Invoke-ResikTargetAnalysis -Target (New-ResikScreenshotsTarget)).Message | Should -BeExactly 'Not detected: No Screenshots folder.'
+    }
+
+    It 'measures only images directly in the folder without deleting them' {
+        $result = Invoke-ResikTargetAnalysis -Target (New-ResikScreenshotsTarget)
+
+        $result.Status | Should -BeExactly 'AnalysisOnly'
+        $result.EstimatedBytes | Should -Be 1000
+        Test-Path -LiteralPath (Join-Path $script:shots 'Screenshot 1.png') | Should -BeTrue
+    }
+
+    It 'deletes the images and keeps subfolders and other files' {
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikScreenshotsTarget)
+
+        $result.Status | Should -BeExactly 'Success'
+        $result.MeasuredBytes | Should -Be 1000
+        @(Get-ChildItem -LiteralPath $script:shots -Force | ForEach-Object Name | Sort-Object) |
+            Should -Be @('Album', 'desktop.ini', 'notes.txt')
+        Test-Path -LiteralPath (Join-Path $script:shots 'Album\kept.png') | Should -BeTrue
+    }
+
+    It 'does not delete a linked file or what it points to' {
+        $outside = New-TestFolder
+        New-TestFile -Path (Join-Path $outside 'real.png')
+        try {
+            New-Item -ItemType SymbolicLink -Path (Join-Path $script:shots 'link.png') -Target (Join-Path $outside 'real.png') -ErrorAction Stop | Out-Null
+        }
+        catch {
+            Set-ItResult -Skipped -Because 'creating symbolic links needs Developer Mode or administrator rights'
+            return
+        }
+
+        Invoke-ResikTargetCleanup -Target (New-ResikScreenshotsTarget) | Out-Null
+
+        Test-Path -LiteralPath (Join-Path $script:shots 'link.png') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $outside 'real.png') | Should -BeTrue
+    }
+
+    It 'reports partial success when a screenshot is in use' {
+        $stream = [System.IO.File]::Open((Join-Path $script:shots 'Screenshot 1.png'), 'Open', 'Read', 'None')
+        try {
+            $result = Invoke-ResikTargetCleanup -Target (New-ResikScreenshotsTarget)
+        }
+        finally {
+            $stream.Dispose()
+        }
+
+        $result.Status | Should -BeExactly 'PartialSuccess'
+        $result.MeasuredBytes | Should -Be 300
+        $result.Message | Should -BeLike '*1 could not be deleted*Screenshot 1.png: *'
+    }
+
+    It 'skips when there are no screenshots' {
+        Remove-Item -LiteralPath (Join-Path $script:shots 'Screenshot 1.png'), (Join-Path $script:shots 'Screenshot 2.JPG')
+        (Invoke-ResikTargetCleanup -Target (New-ResikScreenshotsTarget)).Status | Should -BeExactly 'Skipped'
+    }
+
+    It 'refuses a protected folder' {
+        Mock Get-ResikScreenshotsFolder { [Environment]::GetFolderPath('MyPictures') }
+
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikScreenshotsTarget)
+
+        $result.Status | Should -BeExactly 'Failed'
+        $result.Message | Should -BeLike '*protected location*'
+    }
+
+    It 'is report-only inside OneDrive' {
+        Mock Get-ResikOneDriveFolder { Split-Path -Parent $script:shots }
+        $target = New-ResikScreenshotsTarget
+
+        $target.Clean | Should -BeNullOrEmpty
+        $result = Invoke-ResikTargetAnalysis -Target $target
+        $result.Message | Should -BeLike '*is in OneDrive*'
+        (Get-ResikAnalysisGroup -Result $result -Target $target) | Should -BeExactly 'ReportOnly'
+    }
+
+    It 'skips cleanup if the folder has moved into OneDrive since analysis' {
+        $target = New-ResikScreenshotsTarget
+        Mock Get-ResikOneDriveFolder { Split-Path -Parent $script:shots }
+
+        (Invoke-ResikTargetCleanup -Target $target).Status | Should -BeExactly 'Skipped'
+        Test-Path -LiteralPath (Join-Path $script:shots 'Screenshot 1.png') | Should -BeTrue
+    }
+}
+
 Describe 'recycle-bin target' {
     BeforeEach {
         $script:bin = New-TestFolder

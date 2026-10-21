@@ -2,7 +2,8 @@
 A safe, native PowerShell cleanup utility for Windows and developer-tool caches.
 
 > **Status: early development.** Resik empties the Recycle Bin, clears the
-> DirectX shader and thumbnail caches, runs Windows Update cleanup, and cleans
+> DirectX shader and thumbnail caches, deletes screenshots on request, runs
+> Windows Update cleanup, and cleans
 > the caches of uv, pip, Poetry, Conda,
 > Hugging Face, PyTorch Inductor, Triton, npm, pnpm, Yarn, Composer, Go, Scoop,
 > Chocolatey, and NuGet, and Playwright's browsers.
@@ -94,7 +95,7 @@ resik --version
 | `-h`, `--help` | Show usage and supported options. |
 | `-v`, `--version` | Show the Resik version. |
 | `-n`, `--dry-run` | Analyze targets without changing anything. With the picker, pick what to analyze. |
-| `-a`, `--all` | Select all targets except `recycle-bin`, `scoop-persist`, and `jetbrains-leftovers`, without the picker. |
+| `-a`, `--all` | Select all targets except `recycle-bin`, `screenshots`, `scoop-persist`, and `jetbrains-leftovers`, without the picker. |
 | `-o`, `--only <ids>` | Select specific target IDs (comma-separated), without the picker. |
 | `--non-interactive` | Never prompt. Requires `--all` or `--only`, and `--force` to clean. |
 | `--report-path <path>` | Write a JSON report. Not implemented yet; rejected with an error. |
@@ -135,6 +136,7 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
 | `recycle-bin` | Your Recycle Bin on every drive | `Clear-RecycleBin -Force` | High |
 | `directx-shaders` | Compiled DirectX shaders in `%LOCALAPPDATA%\D3DSCache` | Resik deletes the folder's contents | Low |
 | `thumbnails` | File Explorer's thumbnail cache (`thumbcache_*.db`) | Resik deletes the matching files | Low |
+| `screenshots` | The screenshots in your Screenshots folder (by default `Pictures\Screenshots`) | Resik deletes the image files | High |
 | `windows-update` | Component-store copies of updates that newer updates replaced | `Dism.exe /Online /Cleanup-Image /StartComponentCleanup` | Medium |
 
 - **recycle-bin:** the deleted files cannot be restored afterwards, so `--all`
@@ -148,6 +150,15 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
   both caches: games may stutter the first time, and folders show thumbnails
   again as you browse. The icon cache and driver shader caches (NVIDIA, AMD)
   are not touched.
+- **screenshots:** these are your own files, not a cache. Nothing recreates
+  them, and they are deleted permanently, not moved to the Recycle Bin, so
+  `--all` and "select all" never choose it; name it with `--only screenshots`
+  or select it yourself. Resik asks Windows where the Screenshots folder is
+  (`shell:Screenshots`), so a moved folder is followed. Only `.png`, `.jpg`,
+  `.jpeg`, `.gif`, and `.bmp` files directly in it are deleted; subfolders,
+  links, `desktop.ini`, and other files are kept. If the folder is inside
+  OneDrive the target is report-only, because deleting there would also delete
+  the copies in the cloud.
 - **windows-update:** needs administrator rights. Resik never elevates itself,
   so without them this target is report-only; open a terminal with "Run as
   administrator" to clean it. DISM cannot preview what it will remove, so no
@@ -370,7 +381,8 @@ src/Resik/
     Cleanup.ps1           cleanup with per-target isolation
     Deletion.ps1          link-safe deletion (leftover data and Windows caches)
     Catalog.ps1           registered cleanup targets
-  WindowsCleanup/         RecycleBin, ShaderCache, ThumbnailCache, WindowsUpdate
+  WindowsCleanup/         RecycleBin, ShaderCache, ThumbnailCache, Screenshots,
+                          WindowsUpdate
   DeveloperCleanup/       one file per tool: Uv, Pip, Poetry, Conda,
                           HuggingFace, PyTorch (torch-inductor, triton),
                           Npm, Pnpm, Yarn, Composer, Go,
