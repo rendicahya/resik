@@ -112,7 +112,7 @@ error).
    ready to clean and report-only targets. Tools that are not installed are
    left out, except that `--only` names the ones you asked for. Measuring large caches
    can take a while, so a spinner shows which target is being analyzed and for
-   how long.
+   how long. The report ends with the free space on each fixed drive.
 2. It lists what will be cleaned, where, and the consequences.
 3. It asks `Clean these targets? [y/N]`. Only `y` or `yes` continues. This is
    the only prompt that `--force` skips. With `--non-interactive`, or when input
@@ -123,7 +123,8 @@ error).
 5. Resik reports the results grouped into cleaned, partly cleaned, failed, and
    not cleaned targets, with the measured cache reduction and the change in
    free disk space shown separately. They can differ, because files hard-linked into environments stay
-   on disk, and other programs write to the disk at the same time.
+   on disk, and other programs write to the disk at the same time. The free
+   space on each fixed drive is shown again at the end.
 
 With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
 

@@ -26,6 +26,37 @@ function Format-ResikSize {
     $sign + [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, '{0:0.0} {1}', $value, $units[$unit])
 }
 
+function Format-ResikDriveSpace {
+    # "Free space:" followed by one line per drive, or nothing without drives.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [AllowEmptyCollection()]
+        [object[]] $Drives = @(),
+
+        [string] $Title = 'Free space:'
+    )
+
+    if ($Drives.Count -eq 0) { return }
+    $rows = @(foreach ($drive in $Drives) {
+            $percent = if ($drive.TotalBytes -gt 0) { [math]::Round(100 * $drive.FreeBytes / $drive.TotalBytes) } else { 0 }
+            [pscustomobject]@{
+                Name    = $drive.Name
+                Free    = Format-ResikSize $drive.FreeBytes
+                Total   = Format-ResikSize $drive.TotalBytes
+                Percent = $percent
+            }
+        })
+    $nameWidth = (@($rows | ForEach-Object { $_.Name.Length }) | Measure-Object -Maximum).Maximum
+    $freeWidth = (@($rows | ForEach-Object { $_.Free.Length }) | Measure-Object -Maximum).Maximum
+    $totalWidth = (@($rows | ForEach-Object { $_.Total.Length }) | Measure-Object -Maximum).Maximum
+
+    $Title
+    foreach ($row in $rows) {
+        "  {0}  {1} free of {2} ({3}%)" -f $row.Name.PadRight($nameWidth), $row.Free.PadLeft($freeWidth), $row.Total.PadLeft($totalWidth), $row.Percent
+    }
+}
+
 function Format-ResikCount {
     # "1 target", "3 targets".
     [CmdletBinding()]

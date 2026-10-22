@@ -138,6 +138,7 @@ function Invoke-ResikCli {
     foreach ($line in (Format-ResikSummary -Results $analysis -Targets $selected -Width (Get-ResikReportWidth) -ShowNotFound:$hasOnly)) {
         Write-Host $line
     }
+    Write-ResikDriveSpace
     $analysisFailed = @($analysis | Where-Object { $_.Status -eq 'Failed' }).Count -gt 0
 
     if ($options.DryRun) {
@@ -194,6 +195,7 @@ function Invoke-ResikInteractiveRun {
         foreach ($line in (Format-ResikSummary -Results $selectedAnalysis -Targets $selected -Width (Get-ResikReportWidth))) {
             Write-Host $line
         }
+        Write-ResikDriveSpace
         Write-ResikDryRunHint -Analysis $selectedAnalysis -Targets $selected
         return 0
     }
@@ -229,6 +231,19 @@ function Get-ResikReportWidth {
     Get-ResikConsoleWidth
 }
 
+function Write-ResikDriveSpace {
+    # Prints the free space of each fixed drive after a blank line.
+    [CmdletBinding()]
+    param([string] $Title = 'Free space:')
+
+    $lines = @(Format-ResikDriveSpace -Drives @(Get-ResikDriveSpace) -Title $Title)
+    if ($lines.Count -eq 0) { return }
+    Write-Host ''
+    foreach ($line in $lines) {
+        Write-Host $line
+    }
+}
+
 function Write-ResikDryRunHint {
     # Tells the user how to clean what a dry run found.
     [CmdletBinding()]
@@ -246,6 +261,7 @@ function Write-ResikDryRunHint {
             (Get-ResikAnalysisGroup -Result $result -Target $target) -eq 'Ready'
         } | ForEach-Object { $_.TargetId })
     if ($ready.Count -eq 0) { return }
+    Write-Host ''
     Write-Host "To clean, run: resik --only $($ready -join ',')"
 }
 
@@ -317,6 +333,7 @@ function Invoke-ResikCleanupStep {
     foreach ($line in (Format-ResikCleanupSummary -Results $results -Targets $eligible -Width (Get-ResikReportWidth))) {
         Write-Host $line
     }
+    Write-ResikDriveSpace -Title 'Free space now:'
 
     if ($AnalysisFailed -or @($results | Where-Object { $_.Status -in @('Failed', 'PartialSuccess') }).Count -gt 0) {
         return 1

@@ -109,3 +109,12 @@ Describe 'Get-ResikFreeSpace' {
         Get-ResikFreeSpace -Path 'relative\path' | Should -BeNullOrEmpty
     }
 }
+
+Describe 'Get-ResikDriveSpace' {
+    It 'includes the system drive with its free and total space' {
+        $system = @(Get-ResikDriveSpace) | Where-Object { $_.Name -eq $env:SystemDrive }
+        $system | Should -Not -BeNullOrEmpty
+        $system.TotalBytes | Should -BeGreaterThan 0
+        $system.FreeBytes | Should -BeLessOrEqual $system.TotalBytes
+    }
+}

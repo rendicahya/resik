@@ -464,3 +464,27 @@ Describe 'Resik.ps1 entry point' {
         ($output -join "`n") | Should -BeLike '*Unknown target ID(s): foo, bar*'
     }
 }
+
+Describe 'Invoke-ResikCli free space' {
+    BeforeEach {
+        $script:printed = New-Object System.Collections.Generic.List[string]
+        Mock Write-Host { $script:printed.Add([string]$Object) }
+        Mock Test-ResikInteractiveInput { $true }
+        Mock Get-ResikDriveSpace { [pscustomobject]@{ Name = 'C:'; FreeBytes = 1GB; TotalBytes = 4GB } }
+        $script:targets = @(New-TestTarget -Id 'a' -Clean { [pscustomobject]@{ Status = 'Success' } })
+    }
+
+    It 'shows the free space of each drive in a dry run' {
+        Invoke-ResikCli -Arguments @('--dry-run', '--only', 'a') -Targets $script:targets | Should -Be 0
+
+        $script:printed | Should -Contain 'Free space:'
+        $script:printed | Should -Contain '  C:  1.0 GB free of 4.0 GB (25%)'
+    }
+
+    It 'shows the free space again after cleaning' {
+        Invoke-ResikCli -Arguments @('--force', '--only', 'a') -Targets $script:targets | Should -Be 0
+
+        $script:printed | Should -Contain 'Free space:'
+        $script:printed | Should -Contain 'Free space now:'
+    }
+}

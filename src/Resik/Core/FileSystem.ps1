@@ -166,6 +166,28 @@ function Get-ResikFreeSpace {
     }
 }
 
+function Get-ResikDriveSpace {
+    # Free and total bytes of each ready fixed drive. Free is the space
+    # available to the current user, as in Get-ResikFreeSpace. A drive that
+    # cannot be read is left out.
+    [CmdletBinding()]
+    param()
+
+    foreach ($drive in [System.IO.DriveInfo]::GetDrives()) {
+        try {
+            if ($drive.DriveType -ne [System.IO.DriveType]::Fixed -or -not $drive.IsReady) { continue }
+            [pscustomobject]@{
+                Name       = $drive.Name.TrimEnd('\')
+                FreeBytes  = [long]$drive.AvailableFreeSpace
+                TotalBytes = [long]$drive.TotalSize
+            }
+        }
+        catch {
+            continue
+        }
+    }
+}
+
 function Measure-ResikDirectoryContent {
     # Like Measure-ResikDirectory, but counts only the items directly inside
     # Path whose names match Filter (and everything under them). A missing

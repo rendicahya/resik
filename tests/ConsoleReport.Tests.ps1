@@ -19,6 +19,31 @@ Describe 'Format-ResikSize' {
     }
 }
 
+Describe 'Format-ResikDriveSpace' {
+    It 'lists each drive with aligned columns' {
+        $drives = @(
+            [pscustomobject]@{ Name = 'C:'; FreeBytes = 100GB; TotalBytes = 400GB }
+            [pscustomobject]@{ Name = 'D:'; FreeBytes = 5GB; TotalBytes = 1TB }
+        )
+        $lines = @(Format-ResikDriveSpace -Drives $drives)
+
+        $lines | Should -Be @(
+            'Free space:'
+            '  C:  100.0 GB free of 400.0 GB (25%)'
+            '  D:    5.0 GB free of   1.0 TB (0%)'
+        )
+    }
+
+    It 'uses the given title' {
+        $drive = [pscustomobject]@{ Name = 'C:'; FreeBytes = 1GB; TotalBytes = 2GB }
+        @(Format-ResikDriveSpace -Drives @($drive) -Title 'Free space now:')[0] | Should -BeExactly 'Free space now:'
+    }
+
+    It 'prints nothing without drives' {
+        @(Format-ResikDriveSpace -Drives @()) | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'ConvertTo-ResikDisplayText' {
     It 'shortens <Text> to <Expected>' -ForEach @(
         @{ Text = 'C:\Users\me\cache (3 files)'; Expected = '~\cache (3 files)' }
