@@ -43,14 +43,16 @@ Targets:
 $($targetLines -join [Environment]::NewLine)
 
 Before cleaning, Resik shows what will be removed and asks
-"Clean these targets? [y/N]". --force skips only that question. With
---non-interactive, or when input is redirected, cleanup requires --force.
+"Clean these targets?". Answer y to clean, or a (accept all) to clean and
+also say yes to every later question about a folder or IDE version.
+--force skips only the first question. With --non-interactive, or when
+input is redirected, cleanup requires --force.
 
 recycle-bin, screenshots, scoop-persist, and jetbrains-leftovers delete files
 that cannot be recovered and are never chosen by --all or by "select all".
 scoop-persist
 and jetbrains-leftovers ask about each folder or IDE version, even with
---force, and remove nothing without a terminal.
+--force (unless you answered a), and remove nothing without a terminal.
 windows-update needs administrator rights; Resik never elevates itself.
 "@
 }
@@ -282,6 +284,27 @@ function Read-ResikConfirmation {
     $null -ne $answer -and @('y', 'yes') -contains $answer.Trim().ToLowerInvariant()
 }
 
+function ConvertTo-ResikCleanupAnswer {
+    # "y"/"yes" is Yes, "a"/"all" is All (yes, and yes to every later question
+    # about a folder or version), anything else is No.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowEmptyString()] [AllowNull()] [string] $Answer)
+    switch ("$Answer".Trim().ToLowerInvariant()) {
+        { @('y', 'yes') -contains $_ } { return 'Yes' }
+        { @('a', 'all') -contains $_ } { return 'All' }
+    }
+    'No'
+}
+
+function Read-ResikCleanupAnswer {
+    # Asks the cleanup question; returns Yes, All, or No.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([string] $Prompt)
+    ConvertTo-ResikCleanupAnswer (Read-Host -Prompt $Prompt)
+}
+
 function Invoke-ResikCleanupStep {
     # Confirms and runs cleanup for the targets whose analysis succeeded.
     [CmdletBinding()]
@@ -310,23 +333,27 @@ function Invoke-ResikCleanupStep {
     }
     Write-Host ''
 
-    # The only confirmation prompt in Resik; --force skips it.
+    # The only confirmation prompt in Resik; --force skips it. Answering "a"
+    # (accept all) also answers yes to the questions some targets ask about
+    # each folder; --force never answers those.
+    $acceptAll = $false
     if (-not $Options.Force) {
         if ($Options.NonInteractive -or -not (Test-ResikInteractiveInput)) {
             Write-ResikError 'Cleanup needs confirmation. Add --force to confirm without a prompt, or use --dry-run.'
             return 2
         }
-        if (-not (Read-ResikConfirmation -Prompt 'Clean these targets? [y/N]')) {
+        $answer = Read-ResikCleanupAnswer -Prompt 'Clean these targets? [y = yes, a = yes to all, N = no]'
+        if ($answer -eq 'No') {
             Write-Host 'Cancelled. Nothing was changed.'
             return 0
         }
+        $acceptAll = $answer -eq 'All'
     }
 
-    # Some targets ask about each item; --force never answers those questions.
     $canPrompt = -not $Options.NonInteractive -and (Test-ResikInteractiveInput)
     $results = @(foreach ($target in $eligible) {
             $estimate = ($Analysis | Where-Object { $_.TargetId -eq $target.Id } | Select-Object -First 1).EstimatedBytes
-            Invoke-ResikTargetCleanup -Target $target -EstimatedBytes $estimate -CanPrompt $canPrompt
+            Invoke-ResikTargetCleanup -Target $target -EstimatedBytes $estimate -CanPrompt $canPrompt -AcceptAll ($acceptAll -and $canPrompt)
         })
 
     Write-Host ''

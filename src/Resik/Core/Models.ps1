@@ -25,7 +25,9 @@ function New-ResikTarget {
         MeasuredBytes (observed cache reduction) and FreeSpaceChangeBytes
         (observed change in free disk space). Missing measurements are $null.
         Clean receives one argument, a context object whose CanPrompt is true
-        when a person can answer questions on the console; most targets ignore it.
+        when a person can answer questions on the console, and whose AcceptAll
+        is true when that person answered "a" (yes to all) at the cleanup
+        prompt, so the target asks nothing more; most targets ignore both.
 
         ExplicitOnly targets are never selected by --all or by "select all" in
         the picker; they must be chosen by ID or one by one.

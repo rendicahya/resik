@@ -124,7 +124,7 @@ Describe 'Invoke-ResikCli interactive selection' {
         Mock Write-Host {}
         Mock Get-ResikPickerMode { 'Keys' }
         Mock Test-ResikInteractiveInput { $true }
-        Mock Read-ResikConfirmation { $true }
+        Mock Read-ResikCleanupAnswer { 'Yes' }
 
         $cleanedList = $script:cleaned
         $script:targets = @(
@@ -162,12 +162,12 @@ Describe 'Invoke-ResikCli interactive selection' {
 
         Invoke-ResikCli -Arguments @() -Targets $script:targets | Should -Be 0
 
-        Should -Invoke Read-ResikConfirmation -Times 1 -Exactly
+        Should -Invoke Read-ResikCleanupAnswer -Times 1 -Exactly
         $script:cleaned | Should -Be @('b')
     }
 
     It 'cleans nothing when the confirmation is declined' {
-        Mock Read-ResikConfirmation { $false }
+        Mock Read-ResikCleanupAnswer { 'No' }
         $script:pick = $script:targets[0]
         Mock Select-ResikTargetInteractive { [pscustomobject]@{ Cancelled = $false; Targets = @($script:pick) } }
 
@@ -183,7 +183,7 @@ Describe 'Invoke-ResikCli interactive selection' {
         Invoke-ResikCli -Arguments @('-f') -Targets $script:targets | Should -Be 0
 
         Should -Invoke Select-ResikTargetInteractive -Times 1 -Exactly
-        Should -Invoke Read-ResikConfirmation -Times 0
+        Should -Invoke Read-ResikCleanupAnswer -Times 0
         $script:cleaned | Should -Be @('a')
     }
 
@@ -201,7 +201,7 @@ Describe 'Invoke-ResikCli interactive selection' {
 
         Invoke-ResikCli -Arguments @() -Targets $script:targets | Should -Be 0
 
-        Should -Invoke Read-ResikConfirmation -Times 0
+        Should -Invoke Read-ResikCleanupAnswer -Times 0
         Should -Invoke Write-Host -ParameterFilter { "$Object" -eq 'Nothing selected. Nothing was changed.' }
     }
 
@@ -212,7 +212,7 @@ Describe 'Invoke-ResikCli interactive selection' {
         Invoke-ResikCli -Arguments @('--dry-run') -Targets $script:targets | Should -Be 0
 
         Should -Invoke Select-ResikTargetInteractive -ParameterFilter { $DryRun }
-        Should -Invoke Read-ResikConfirmation -Times 0
+        Should -Invoke Read-ResikCleanupAnswer -Times 0
         $script:cleaned | Should -BeNullOrEmpty
         Should -Invoke Write-Host -ParameterFilter { "$Object" -like '  a  *' }
         Should -Invoke Write-Host -Times 0 -ParameterFilter { "$Object" -like '  b  *' }
@@ -240,6 +240,24 @@ Describe 'Invoke-ResikCli interactive selection' {
     }
 }
 
+Describe 'ConvertTo-ResikCleanupAnswer' {
+    It 'reads <Text> as <Expected>' -ForEach @(
+        @{ Text = 'y'; Expected = 'Yes' }
+        @{ Text = ' YES '; Expected = 'Yes' }
+        @{ Text = 'a'; Expected = 'All' }
+        @{ Text = 'All'; Expected = 'All' }
+        @{ Text = ''; Expected = 'No' }
+        @{ Text = 'n'; Expected = 'No' }
+        @{ Text = 'always'; Expected = 'No' }
+    ) {
+        ConvertTo-ResikCleanupAnswer $Text | Should -BeExactly $Expected
+    }
+
+    It 'reads no answer as No' {
+        ConvertTo-ResikCleanupAnswer $null | Should -BeExactly 'No'
+    }
+}
+
 Describe 'Invoke-ResikCli cleanup' {
     BeforeEach {
         $script:errors = New-Object System.Collections.Generic.List[string]
@@ -247,7 +265,7 @@ Describe 'Invoke-ResikCli cleanup' {
         Mock Write-ResikError { $script:errors.Add($Message) }
         Mock Write-Host {}
         Mock Test-ResikInteractiveInput { $true }
-        Mock Read-ResikConfirmation { $true }
+        Mock Read-ResikCleanupAnswer { 'Yes' }
 
         function New-CleanableTarget {
             [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
@@ -267,7 +285,7 @@ Describe 'Invoke-ResikCli cleanup' {
     It 'asks for confirmation, then cleans and exits 0' {
         Invoke-ResikCli -Arguments @('--only', 'fake') -Targets @(New-CleanableTarget) | Should -Be 0
 
-        Should -Invoke Read-ResikConfirmation -Times 1 -Exactly
+        Should -Invoke Read-ResikCleanupAnswer -Times 1 -Exactly
         $script:cleaned | Should -Be @('fake')
         Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'Cleaned *Removed  Free space' }
         Should -Invoke Write-Host -ParameterFilter { "$Object" -like '  fake  Fake fake  *100 B*' }
@@ -281,7 +299,7 @@ Describe 'Invoke-ResikCli cleanup' {
     }
 
     It 'cleans nothing when the user declines' {
-        Mock Read-ResikConfirmation { $false }
+        Mock Read-ResikCleanupAnswer { 'No' }
 
         Invoke-ResikCli -Arguments @('--all') -Targets @(New-CleanableTarget) | Should -Be 0
 
@@ -289,17 +307,36 @@ Describe 'Invoke-ResikCli cleanup' {
         Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'Cancelled. Nothing was changed.*' }
     }
 
+    It 'answers the targets'' own questions only after "a" (yes to all)' {
+        Mock Invoke-ResikTargetCleanup { New-ResikResult -TargetId $Target.Id -Operation Clean -Status Success }
+
+        Invoke-ResikCli -Arguments @('--all') -Targets @(New-CleanableTarget) | Should -Be 0
+        Should -Invoke Invoke-ResikTargetCleanup -Times 1 -Exactly -ParameterFilter { $CanPrompt -and -not $AcceptAll }
+
+        Mock Read-ResikCleanupAnswer { 'All' }
+        Invoke-ResikCli -Arguments @('--all') -Targets @(New-CleanableTarget) | Should -Be 0
+        Should -Invoke Invoke-ResikTargetCleanup -Times 1 -Exactly -ParameterFilter { $CanPrompt -and $AcceptAll }
+    }
+
+    It 'never answers the targets'' own questions with --force' {
+        Mock Invoke-ResikTargetCleanup { New-ResikResult -TargetId $Target.Id -Operation Clean -Status Success }
+
+        Invoke-ResikCli -Arguments @('--all', '--force') -Targets @(New-CleanableTarget) | Should -Be 0
+
+        Should -Invoke Invoke-ResikTargetCleanup -Times 0 -ParameterFilter { $AcceptAll }
+    }
+
     It 'skips the prompt with --force' {
         Invoke-ResikCli -Arguments @('--all', '-f') -Targets @(New-CleanableTarget) | Should -Be 0
 
-        Should -Invoke Read-ResikConfirmation -Times 0
+        Should -Invoke Read-ResikCleanupAnswer -Times 0
         $script:cleaned | Should -Be @('fake')
     }
 
     It 'requires --force with --non-interactive and cleans nothing without it' {
         Invoke-ResikCli -Arguments @('--non-interactive', '--all') -Targets @(New-CleanableTarget) | Should -Be 2
 
-        Should -Invoke Read-ResikConfirmation -Times 0
+        Should -Invoke Read-ResikCleanupAnswer -Times 0
         $script:cleaned | Should -BeNullOrEmpty
         $script:errors | Should -BeLike '*Add --force to confirm*'
     }
@@ -314,7 +351,7 @@ Describe 'Invoke-ResikCli cleanup' {
 
         Invoke-ResikCli -Arguments @('--all') -Targets @(New-CleanableTarget) | Should -Be 2
 
-        Should -Invoke Read-ResikConfirmation -Times 0
+        Should -Invoke Read-ResikCleanupAnswer -Times 0
         $script:cleaned | Should -BeNullOrEmpty
     }
 
@@ -332,7 +369,7 @@ Describe 'Invoke-ResikCli cleanup' {
     It 'does not clean analysis-only targets' {
         Invoke-ResikCli -Arguments @('--all') -Targets @(New-TestTarget) | Should -Be 0
 
-        Should -Invoke Read-ResikConfirmation -Times 0
+        Should -Invoke Read-ResikCleanupAnswer -Times 0
         Should -Invoke Write-Host -ParameterFilter { "$Object" -eq 'Nothing to clean.' }
     }
 
@@ -413,7 +450,7 @@ Describe 'Resik.ps1 entry point' {
         $run = Invoke-ResikProcess -Arguments '--non-interactive', '-n', '-a'
         $run.ExitCode | Should -Be 0
         $run.Output | Should -BeLike '*Dry run:*'
-        $run.Output | Should -Match '(?m)^(Total you can reclaim|Nothing to clean)'
+        $run.Output | Should -Match '(?m)^(Total: about|Nothing to clean)'
         $run.Output | Should -Not -BeLike '*Not found:*'
     }
 

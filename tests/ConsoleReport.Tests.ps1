@@ -105,14 +105,13 @@ Describe 'Format-ResikSummary' {
         $lines = @(Format-ResikSummary -Results $results -Targets $targets)
 
         $lines | Should -Be @(
-            'Ready to clean             Size  Risk'
-            '  big      Fake big      4.0 KB  Low'
-            '  small    Fake small    1.0 KB  Low   small cache'
-            '  unsized  Fake unsized       ?  Low'
+            'Ready to clean    Size'
+            '  big           4.0 KB'
+            '  small         1.0 KB'
+            '  unsized            ?'
             ''
-            'Report only                Size  Risk'
-            '  report   Fake report   8.0 KB  Low'
-            '    Clean it in the IDE.'
+            'Report only       Size'
+            '  report        8.0 KB  Clean it in the IDE.'
             ''
             'Skipped'
             '  off'
@@ -122,8 +121,7 @@ Describe 'Format-ResikSummary' {
             '  broken (Failed)'
             '    Analysis failed: boom'
             ''
-            'Total you can reclaim: about 5.0 KB (estimate only; nothing was removed)'
-            '1 target could not be measured in advance (shown as ?).'
+            'Total: about 5.0 KB (estimate; 1 target not measured)'
         )
     }
 
@@ -138,14 +136,15 @@ Describe 'Format-ResikSummary' {
         $shown = @(Format-ResikSummary -Results $results -Targets $targets -ShowNotFound)
 
         ($hidden -join "`n") | Should -Not -BeLike '*a-long-missing-id*'
-        $hidden[1] | Should -BeExactly '  small  Fake small  1.0 KB  Low'
+        $hidden[1] | Should -BeExactly '  small         1.0 KB'
         $shown | Should -Contain 'Not found: a-long-missing-id'
     }
 
     It 'cuts details to fit the width' {
+        $targets = @(New-TestTarget -Id 'a')
         $results = @(New-ResikResult -TargetId 'a' -Operation Analyze -Status AnalysisOnly -EstimatedBytes 1 -Message ('x' * 200))
 
-        foreach ($line in (Format-ResikSummary -Results $results -Width 60)) {
+        foreach ($line in (Format-ResikSummary -Results $results -Targets $targets -Width 60)) {
             $line.Length | Should -BeLessOrEqual 59
         }
     }

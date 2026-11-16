@@ -190,6 +190,7 @@ function Invoke-ResikJetBrainsLeftoverCleanup {
     )
 
     $canPrompt = $null -ne $Context -and [bool](Get-ResikOptionalProperty $Context 'CanPrompt')
+    $acceptAll = $canPrompt -and [bool](Get-ResikOptionalProperty $Context 'AcceptAll')
     if (-not $canPrompt) {
         return [pscustomobject]@{
             Status  = 'Skipped'
@@ -220,9 +221,12 @@ function Invoke-ResikJetBrainsLeftoverCleanup {
     foreach ($version in $versions) {
         $paths = @($version.Paths | ForEach-Object { $_.Path })
         $before = Measure-ResikPathSet -Path $paths
-        $question = "Delete all data of $($version.Name) ($(Format-ResikSize $before.Bytes)) in $($paths -join ' and '), " +
-            'including its settings, plugins, and Local History? It cannot be recovered. [y/N]'
-        if (-not (Read-ResikConfirmation -Prompt $question)) {
+        $what = "all data of $($version.Name) ($(Format-ResikSize $before.Bytes)) in $($paths -join ' and '), " +
+            'including its settings, plugins, and Local History'
+        if ($acceptAll) {
+            Write-Host "Deleting $what (you answered yes to all)."
+        }
+        elseif (-not (Read-ResikConfirmation -Prompt "Delete ${what}? It cannot be recovered. [y/N]")) {
             $kept.Add($version.Name)
             continue
         }

@@ -117,7 +117,11 @@ function Invoke-ResikTargetCleanup {
         [Nullable[long]] $EstimatedBytes = $null,
 
         # True when a person can answer the target's own questions.
-        [bool] $CanPrompt = $false
+        [bool] $CanPrompt = $false,
+
+        # True when the user answered "a" (accept all) at the cleanup prompt,
+        # so the target's own questions are answered yes.
+        [bool] $AcceptAll = $false
     )
 
     $ErrorActionPreference = 'Stop'
@@ -128,7 +132,7 @@ function Invoke-ResikTargetCleanup {
     }
 
     try {
-        $outcome = & $Target.Clean ([pscustomobject]@{ CanPrompt = $CanPrompt })
+        $outcome = & $Target.Clean ([pscustomobject]@{ CanPrompt = $CanPrompt; AcceptAll = $CanPrompt -and $AcceptAll })
         $status = [string](Get-ResikOptionalProperty $outcome 'Status')
         if (@('Success', 'PartialSuccess', 'Failed', 'Skipped') -cnotcontains $status) {
             throw "Cleanup returned an invalid status '$status'."

@@ -108,15 +108,19 @@ error).
 ### How cleanup works
 
 1. Resik analyzes the targets and shows the estimated size of each, either in
-   the picker or, with `--all` or `--only`, as a report grouped into targets
-   ready to clean and report-only targets. Tools that are not installed are
+   the picker or, with `--all` or `--only`, as a short report listing the ID
+   and size of each target ready to clean, then the report-only targets with
+   the reason Resik does not clean them. Tools that are not installed are
    left out, except that `--only` names the ones you asked for. Measuring large caches
    can take a while, so a spinner shows which target is being analyzed and for
    how long. The report ends with the free space on each fixed drive.
 2. It lists what will be cleaned, where, and the consequences.
-3. It asks `Clean these targets? [y/N]`. Only `y` or `yes` continues. This is
-   the only prompt that `--force` skips. With `--non-interactive`, or when input
-   is redirected, cleanup requires `--force`.
+3. It asks `Clean these targets?`. `y` or `yes` continues. `a` or `all`
+   (accept all) continues and also answers yes to every later question about a
+   single folder or IDE version (see [Leftover app data](#leftover-app-data-chosen-one-by-one)); Resik
+   then prints each folder as it deletes it. Anything else cancels. This is the
+   only prompt that `--force` skips, and `--force` never counts as `a`. With
+   `--non-interactive`, or when input is redirected, cleanup requires `--force`.
 4. Each target is cleaned independently; one failure does not stop the others.
    Resik prints the command it runs, and a spinner shows that it is still
    working while the command runs and while Resik measures the result.
@@ -296,8 +300,9 @@ folder. The kernels are compiled again on the next run, which is slower once.
 Neither tool has a command to remove this data, so Resik deletes it itself. It
 cannot be recovered, and `--all` and "select all" in the picker never choose
 these targets; name them with `--only` or select them yourself. During cleanup
-Resik asks about each folder or version separately. `--force` does not answer
-these questions, and without a terminal nothing is removed.
+Resik asks about each folder or version separately, unless you answered `a`
+(accept all) to `Clean these targets?`. `--force` does not answer these
+questions, and without a terminal nothing is removed.
 
 When you uninstall a Scoop app without `--purge`, Scoop keeps its settings and
 data in `<scoop>\persist\<app>` so a reinstall can reuse them. Scoop has no
@@ -308,7 +313,8 @@ command to remove that data once the app is gone:
 - `--all` and "select all" in the picker never choose it; name it with
   `--only scoop-persist` or select it yourself.
 - During cleanup Resik asks about each folder separately, showing its name,
-  size, and path. `--force` does not answer these questions, and without a
+  size, and path, unless you answered `a` (accept all) to
+  `Clean these targets?`. `--force` does not answer these questions, and without a
   terminal nothing is removed. Before deleting, Resik checks again that the
   app is still not installed.
 - The deletion never follows symbolic links or junctions, and stays inside

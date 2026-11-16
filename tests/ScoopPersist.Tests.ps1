@@ -75,6 +75,26 @@ Describe 'scoop-persist target' {
         Should -Invoke Read-ResikConfirmation -Times 2 -Exactly
     }
 
+    It 'deletes every folder without asking after "yes to all"' {
+        $script:answers = @{}
+
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikScoopPersistTarget) -CanPrompt $true -AcceptAll $true
+
+        $result.Status | Should -BeExactly 'Success'
+        Join-Path $script:persist 'gone' | Should -Not -Exist
+        Join-Path $script:persist 'old' | Should -Not -Exist
+        Join-Path $script:persist 'kept\settings.ini' | Should -Exist
+        Should -Invoke Read-ResikConfirmation -Times 0
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like "Deleting the saved data of 'gone'*" }
+    }
+
+    It 'ignores "yes to all" without a terminal' {
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikScoopPersistTarget) -CanPrompt $false -AcceptAll $true
+
+        $result.Status | Should -BeExactly 'Skipped'
+        Join-Path $script:persist 'gone\settings.ini' | Should -Exist
+    }
+
     It 'keeps a folder the user declines' {
         $script:answers.old = $false
 
@@ -176,5 +196,12 @@ Describe 'Explicit-only targets' {
         $probe = New-TestTarget -Id 'probe' -Clean { param($Context) [pscustomobject]@{ Status = 'Success'; Details = "$($Context.CanPrompt)" } }
         (Invoke-ResikTargetCleanup -Target $probe).Message | Should -BeExactly 'False'
         (Invoke-ResikTargetCleanup -Target $probe -CanPrompt $true).Message | Should -BeExactly 'True'
+    }
+
+    It 'passes AcceptAll to Clean only when a person can answer' {
+        $probe = New-TestTarget -Id 'probe' -Clean { param($Context) [pscustomobject]@{ Status = 'Success'; Details = "$($Context.AcceptAll)" } }
+        (Invoke-ResikTargetCleanup -Target $probe -CanPrompt $true).Message | Should -BeExactly 'False'
+        (Invoke-ResikTargetCleanup -Target $probe -CanPrompt $true -AcceptAll $true).Message | Should -BeExactly 'True'
+        (Invoke-ResikTargetCleanup -Target $probe -CanPrompt $false -AcceptAll $true).Message | Should -BeExactly 'False'
     }
 }

@@ -243,6 +243,7 @@ function Invoke-ResikScoopPersistCleanup {
     )
 
     $canPrompt = $null -ne $Context -and [bool](Get-ResikOptionalProperty $Context 'CanPrompt')
+    $acceptAll = $canPrompt -and [bool](Get-ResikOptionalProperty $Context 'AcceptAll')
     if (-not $canPrompt) {
         return [pscustomobject]@{
             Status  = 'Skipped'
@@ -266,8 +267,10 @@ function Invoke-ResikScoopPersistCleanup {
 
     foreach ($leftover in $leftovers) {
         $before = Measure-ResikPathSet -Path @($leftover.Path)
-        $question = "Delete the saved data of '$($leftover.Name)' ($(Format-ResikSize $before.Bytes)) in $($leftover.Path)? It cannot be recovered. [y/N]"
-        if (-not (Read-ResikConfirmation -Prompt $question)) {
+        if ($acceptAll) {
+            Write-Host "Deleting the saved data of '$($leftover.Name)' ($(Format-ResikSize $before.Bytes)) in $($leftover.Path) (you answered yes to all)."
+        }
+        elseif (-not (Read-ResikConfirmation -Prompt "Delete the saved data of '$($leftover.Name)' ($(Format-ResikSize $before.Bytes)) in $($leftover.Path)? It cannot be recovered. [y/N]")) {
             $kept.Add($leftover.Name)
             continue
         }

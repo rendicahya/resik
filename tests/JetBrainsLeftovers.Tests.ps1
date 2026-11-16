@@ -78,6 +78,26 @@ Describe 'jetbrains-leftovers target' {
         Should -Invoke Read-ResikConfirmation -Times 2 -Exactly
     }
 
+    It 'deletes every version without asking after "yes to all"' {
+        $script:answers = @{}
+
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikJetBrainsLeftoverTarget) -CanPrompt $true -AcceptAll $true
+
+        $result.Message | Should -BeExactly 'Deleted: PyCharmEdu2021.3, Rider2024.1'
+        Join-Path $script:system 'Toolbox\apps.json' | Should -Exist
+        Should -Invoke Read-ResikConfirmation -Times 0
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'Deleting all data of Rider2024.1 *' }
+    }
+
+    It 'still refuses while an IDE is running after "yes to all"' {
+        Mock Get-ResikJetBrainsRunningIde { 'rider64' }
+
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikJetBrainsLeftoverTarget) -CanPrompt $true -AcceptAll $true
+
+        $result.Status | Should -BeExactly 'Skipped'
+        Join-Path $script:config 'Rider2024.1\options\ide.xml' | Should -Exist
+    }
+
     It 'keeps a version the user declines' {
         $script:answers['Rider2024.1'] = $false
 

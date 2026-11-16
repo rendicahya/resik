@@ -162,8 +162,10 @@ function Get-ResikAnalysisGroup {
 }
 
 function Format-ResikSummary {
-    # The analysis report: cleanable targets sorted by size, then targets Resik
-    # only reports, skipped targets, and problems. Tools that are not installed
+    # The analysis report: cleanable targets (ID and size) sorted by size, then
+    # targets Resik only reports (with the reason), skipped targets, and
+    # problems. Details such as paths are left to the cleanup plan, which is
+    # shown before anything is cleaned. Tools that are not installed
     # are left out, unless ShowNotFound is set (the user named them with
     # --only), which adds one line naming them. Width (0 for no limit) keeps
     # rows on one line.
@@ -192,8 +194,6 @@ function Format-ResikSummary {
         $target = $Targets | Where-Object { $_.Id -eq $result.TargetId } | Select-Object -First 1
         [pscustomobject]@{
             Id      = $result.TargetId
-            Name    = $(if ($null -ne $target) { $target.Name } else { '' })
-            Risk    = $(if ($null -ne $target) { "$($target.RiskLevel)" } else { '' })
             Bytes   = $result.EstimatedBytes
             Size    = $(if ($null -eq $result.EstimatedBytes) { '?' } else { Format-ResikSize $result.EstimatedBytes })
             Status  = "$($result.Status)"
@@ -213,25 +213,22 @@ function Format-ResikSummary {
 
     $sized = @($ready) + @($reportOnly)
     $shown = @($sized) + @($skipped) + @($problems)
-    $idWidth = [int][Math]::Max(2, (@($shown | ForEach-Object { $_.Id.Length }) | Measure-Object -Maximum).Maximum)
-    $nameWidth = 0
+    # The ID column is at least as wide as the section headings above it, so
+    # the Size column lines up with its heading.
+    $idWidth = [int][Math]::Max('Ready to clean'.Length - 2, (@($shown | ForEach-Object { $_.Id.Length }) | Measure-Object -Maximum).Maximum)
     $sizeWidth = 4
-    $riskWidth = 4
     foreach ($entry in $sized) {
-        $nameWidth = [Math]::Max($nameWidth, $entry.Name.Length)
         $sizeWidth = [Math]::Max($sizeWidth, $entry.Size.Length)
-        $riskWidth = [Math]::Max($riskWidth, $entry.Risk.Length)
     }
-    $nameWidth = [Math]::Min($nameWidth, 30)
-    $nameColumn = if ($nameWidth -gt 0) { '  ' + ''.PadRight($nameWidth) } else { '' }
-    $detailsAt = 2 + $idWidth + $nameColumn.Length + 2 + $sizeWidth + 2 + $riskWidth + 2
+    # Rows show only the ID and size; a report-only target adds its note,
+    # which says why Resik does not clean it.
+    $detailsAt = 2 + $idWidth + 2 + $sizeWidth + 2
     $detailsWidth = if ($Width -gt 0) { [Math]::Max(0, $Width - 1 - $detailsAt) } else { 0 }
 
     $lines = New-Object System.Collections.Generic.List[string]
     $addRow = {
         param($Entry, [bool] $WithDetails)
-        $name = if ($nameWidth -gt 0) { '  ' + (Limit-ResikText $Entry.Name $nameWidth).PadRight($nameWidth) } else { '' }
-        $row = '  ' + $Entry.Id.PadRight($idWidth) + $name + '  ' + $Entry.Size.PadLeft($sizeWidth) + '  ' + $Entry.Risk.PadRight($riskWidth)
+        $row = '  ' + $Entry.Id.PadRight($idWidth) + '  ' + $Entry.Size.PadLeft($sizeWidth)
         if ($WithDetails -and $Entry.Message -and ($Width -le 0 -or $detailsWidth -ge 10)) {
             $row += '  ' + (Limit-ResikText $Entry.Message $detailsWidth)
         }
@@ -240,21 +237,17 @@ function Format-ResikSummary {
     $addHeading = {
         param([string] $Title)
         if ($lines.Count -gt 0) { $lines.Add('') }
-        $left = $Title.PadRight(2 + $idWidth + $nameColumn.Length)
-        $lines.Add(($left + '  ' + 'Size'.PadLeft($sizeWidth) + '  ' + 'Risk').TrimEnd())
+        $lines.Add($Title.PadRight(2 + $idWidth) + '  ' + 'Size'.PadLeft($sizeWidth))
     }
 
     if ($ready.Count -gt 0) {
         & $addHeading 'Ready to clean'
-        foreach ($entry in $ready) { & $addRow $entry $true }
+        foreach ($entry in $ready) { & $addRow $entry $false }
     }
 
     if ($reportOnly.Count -gt 0) {
         & $addHeading 'Report only'
-        foreach ($entry in $reportOnly) {
-            & $addRow $entry $false
-            foreach ($line in @(Split-ResikText $entry.Message -Width ($Width - 1) -Indent '    ')) { $lines.Add($line) }
-        }
+        foreach ($entry in $reportOnly) { & $addRow $entry $true }
     }
 
     foreach ($section in @(
@@ -286,12 +279,9 @@ function Format-ResikSummary {
         $lines.Add('Nothing to clean.')
     }
     else {
-        foreach ($line in @(Split-ResikText "Total you can reclaim: about $(Format-ResikSize $estimatedTotal) (estimate only; nothing was removed)" -Width ($Width - 1))) {
-            $lines.Add($line)
-        }
-        if ($unmeasured -gt 0) {
-            $lines.Add("$(Format-ResikCount $unmeasured) could not be measured in advance (shown as ?).")
-        }
+        $note = 'estimate'
+        if ($unmeasured -gt 0) { $note += "; $(Format-ResikCount $unmeasured) not measured" }
+        $lines.Add("Total: about $(Format-ResikSize $estimatedTotal) ($note)")
     }
 
     $lines.ToArray()

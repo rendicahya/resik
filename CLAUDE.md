@@ -427,7 +427,7 @@ Validate incompatible arguments and unknown target IDs. Display actionable error
 
 ### Cleanup confirmation
 
-Without `--dry-run`, Resik analyzes the selected targets, prints the cleanup plan (`Format-ResikCleanupPlan`), and asks `Clean these targets? [y/N]` (`Read-ResikConfirmation`). That is the only prompt `--force` skips. With `--non-interactive`, or when `Test-ResikInteractiveInput` is false (redirected input), cleanup without `--force` exits `2` before anything is cleaned. Only targets whose analysis returned `AnalysisOnly` and that have `Clean` are cleaned. A declined prompt exits `0`; a `Failed` or `PartialSuccess` cleanup exits `1`.
+Without `--dry-run`, Resik analyzes the selected targets, prints the cleanup plan (`Format-ResikCleanupPlan`), and asks `Clean these targets?` (`Read-ResikCleanupAnswer`: `y` is Yes, `a` is All, anything else No). That is the only prompt `--force` skips. `a` (accept all) also sets `AcceptAll` in the `Clean` context (only with `CanPrompt`), so targets that ask about each folder (`scoop-persist`, `jetbrains-leftovers`) print each one instead of asking; `--force` never sets it. With `--non-interactive`, or when `Test-ResikInteractiveInput` is false (redirected input), cleanup without `--force` exits `2` before anything is cleaned. Only targets whose analysis returned `AnalysisOnly` and that have `Clean` are cleaned. A declined prompt exits `0`; a `Failed` or `PartialSuccess` cleanup exits `1`.
 
 ### Dry-run guarantees
 
