@@ -10,7 +10,8 @@
 # The temp folder must be named Temp or Tmp, so a TEMP variable pointing at an
 # ordinary folder (such as Documents) is refused.
 
-function Get-ResikTempFileAgeDays {
+function Get-ResikTempFileAge {
+    # In days.
     7
 }
 
@@ -53,7 +54,7 @@ function Get-ResikTempFileLocation {
     # The locations to clean; %WINDIR%\Temp only as administrator.
     [CmdletBinding()]
     param()
-    $before = (Get-Date).AddDays(-(Get-ResikTempFileAgeDays))
+    $before = (Get-Date).AddDays(-(Get-ResikTempFileAge))
     $paths = @(Get-ResikCheckedTempPath -Path (Get-ResikUserTempPath))
     if (Test-ResikAdministrator) {
         $windowsTemp = Get-ResikCheckedTempPath -Path (Get-ResikWindowsTempPath)
@@ -80,7 +81,7 @@ function Invoke-ResikTempFileAnalysis {
         return [pscustomobject]@{ EstimatedBytes = 0; Details = 'No temp folder found.' }
     }
     $size = Measure-ResikAgedFileLocation -Location $locations
-    $days = Get-ResikTempFileAgeDays
+    $days = Get-ResikTempFileAge
     $details = "$($size.Files) file(s) older than $days days in $(@($locations | ForEach-Object { $_.Path }) -join ' and ')"
     if ($size.Unreadable -gt 0) { $details += "; $($size.Unreadable) folder(s) could not be read" }
     if (-not (Test-ResikAdministrator)) {
