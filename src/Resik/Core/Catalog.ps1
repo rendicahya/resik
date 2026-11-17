@@ -11,9 +11,14 @@ function Get-ResikTargetCatalog {
     New-ResikRecycleBinTarget
     New-ResikShaderCacheTarget
     New-ResikThumbnailCacheTarget
+    New-ResikTempFileTarget
     New-ResikScreenshotsTarget
     New-ResikWindowsUpdateTarget
+    New-ResikWindowsLogTarget
     New-ResikDeliveryOptimizationTarget
+    New-ResikEdgeCacheTarget
+    New-ResikEdgeProfileTarget
+    New-ResikInternetCacheTarget
     New-ResikUvTarget
     New-ResikPipTarget
     New-ResikPoetryTarget

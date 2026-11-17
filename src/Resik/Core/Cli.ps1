@@ -44,16 +44,18 @@ $($targetLines -join [Environment]::NewLine)
 
 Before cleaning, Resik shows what will be removed and asks
 "Clean these targets?". Answer y to clean, or a (accept all) to clean and
-also say yes to every later question about a folder or IDE version.
+also say yes to every later question about a folder, IDE version, or reset.
 --force skips only the first question. With --non-interactive, or when
 input is redirected, cleanup requires --force.
 
-recycle-bin, screenshots, scoop-persist, and jetbrains-leftovers delete files
-that cannot be recovered and are never chosen by --all or by "select all".
-scoop-persist
-and jetbrains-leftovers ask about each folder or IDE version, even with
---force (unless you answered a), and remove nothing without a terminal.
-windows-update needs administrator rights; Resik never elevates itself.
+recycle-bin, screenshots, edge-profile, scoop-persist, and jetbrains-leftovers
+delete files that cannot be recovered and are never chosen by --all or by
+"select all". edge-profile, scoop-persist, and jetbrains-leftovers ask before
+deleting, even with --force (unless you answered a), and remove nothing
+without a terminal. edge-cache and edge-profile are refused while Microsoft
+Edge is running.
+windows-update and windows-logs need administrator rights, and temp-files
+includes %WINDIR%\Temp only with them; Resik never elevates itself.
 "@
 }
 

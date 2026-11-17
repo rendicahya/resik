@@ -1,15 +1,16 @@
 # resik
 A safe, native PowerShell cleanup utility for Windows and developer-tool caches.
 
-> **Status: early development.** Resik empties the Recycle Bin, clears the
-> DirectX shader and thumbnail caches, deletes screenshots on request, runs
-> Windows Update cleanup, clears the Delivery Optimization cache, and cleans
-> the caches of uv, pip, Poetry, Conda,
-> Hugging Face, PyTorch Inductor, Triton, npm, pnpm, Yarn, Bun, Deno, Composer,
-> Go, Dart and Flutter, Scoop,
-> Chocolatey, and NuGet, and Playwright's browsers.
-> For Gradle, Maven, and JetBrains IDEs it only reports sizes. It never cleans
-> anything without showing you the plan first and asking for confirmation.
+> **Status: early development.** Resik empties the Recycle Bin, deletes old
+> temporary files and Windows logs, clears the DirectX shader and thumbnail
+> caches, deletes screenshots on request, runs Windows Update cleanup, clears
+> the Delivery Optimization cache, clears Microsoft Edge's cache or resets Edge
+> entirely, clears Internet Explorer's temporary files, and cleans the caches
+> of uv, pip, Poetry, Conda, Hugging Face, PyTorch Inductor, Triton, npm, pnpm,
+> Yarn, Bun, Deno, Composer, Go, Dart and Flutter, Scoop, Chocolatey, and
+> NuGet, and Playwright's browsers. For Gradle, Maven, and JetBrains IDEs it
+> only reports sizes. It never cleans anything without showing you the plan
+> first and asking for confirmation.
 
 ## Requirements
 
@@ -96,7 +97,7 @@ resik --version
 | `-h`, `--help` | Show usage and supported options. |
 | `-v`, `--version` | Show the Resik version. |
 | `-n`, `--dry-run` | Analyze targets without changing anything. With the picker, pick what to analyze. |
-| `-a`, `--all` | Select all targets except `recycle-bin`, `screenshots`, `scoop-persist`, and `jetbrains-leftovers`, without the picker. |
+| `-a`, `--all` | Select all targets except `recycle-bin`, `screenshots`, `edge-profile`, `scoop-persist`, and `jetbrains-leftovers`, without the picker. |
 | `-o`, `--only <ids>` | Select specific target IDs (comma-separated), without the picker. |
 | `--non-interactive` | Never prompt. Requires `--all` or `--only`, and `--force` to clean. |
 | `--report-path <path>` | Write a JSON report. Not implemented yet; rejected with an error. |
@@ -142,9 +143,14 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
 | `recycle-bin` | Your Recycle Bin on every drive | `Clear-RecycleBin -Force` | High |
 | `directx-shaders` | Compiled DirectX shaders in `%LOCALAPPDATA%\D3DSCache` | Resik deletes the folder's contents | Low |
 | `thumbnails` | File Explorer's thumbnail cache (`thumbcache_*.db`) | Resik deletes the matching files | Low |
+| `temp-files` | Files older than 7 days in your temp folder, and in `%WINDIR%\Temp` as administrator | Resik deletes the old files | Low |
 | `screenshots` | The screenshots in your Screenshots folder (by default `Pictures\Screenshots`) | Resik deletes the image files | High |
 | `windows-update` | Component-store copies of updates that newer updates replaced | `Dism.exe /Online /Cleanup-Image /StartComponentCleanup` | Medium |
+| `windows-logs` | Rotated CBS logs, and DISM and Windows Update logs older than 7 days, in `%WINDIR%\Logs` | Resik deletes the old logs | Low |
 | `delivery-optimization` | Windows Update, Microsoft Store, and Office downloads kept to share with other PCs | `Delete-DeliveryOptimizationCache -Force` | Low |
+| `edge-cache` | Microsoft Edge's cached web files and GPU shader caches, in every profile | Resik deletes the folders' contents | Low |
+| `edge-profile` | All Microsoft Edge data: history, cookies, saved passwords, extensions, settings | Resik deletes `User Data` after you confirm | High |
+| `ie-cache` | Internet Explorer's temporary internet files (`INetCache\IE`) | Resik deletes the cached files | Low |
 
 - **recycle-bin:** the deleted files cannot be restored afterwards, so `--all`
   and "select all" in the picker never choose it; name it with
@@ -157,6 +163,19 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
   both caches: games may stutter the first time, and folders show thumbnails
   again as you browse. The icon cache and driver shader caches (NVIDIA, AMD)
   are not touched.
+- **temp-files:** like Disk Cleanup's "Temporary files", only files that were
+  both created and last changed more than 7 days ago are deleted, so running
+  apps and installers keep what they are using; files in use are skipped and
+  reported. Empty subfolders created more than 7 days ago are removed too.
+  Links are not followed. The folder comes from `TEMP` and must be named
+  `Temp` or `Tmp`. `%WINDIR%\Temp` is included only when Resik runs as
+  administrator.
+- **windows-logs:** needs administrator rights; without them it is
+  report-only. It deletes `CBS\CbsPersist_*.log` and `.cab` (`CBS.log` after
+  Windows rotated it, older than a day), `DISM\*.log` and `*.bak`, and
+  `WindowsUpdate\*.etl` older than 7 days. The current logs and every other
+  folder in `%WINDIR%\Logs` are kept. These logs only help when
+  troubleshooting Windows Update; Windows writes new ones.
 - **screenshots:** these are your own files, not a cache. Nothing recreates
   them, and they are deleted permanently, not moved to the Recycle Bin, so
   `--all` and "select all" never choose it; name it with `--only screenshots`
@@ -179,6 +198,29 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
   progress is not interrupted. Windows downloads the files again if it needs
   them; until then, other PCs on your network cannot get them from yours.
   `C:\Windows\SoftwareDistribution\Download` and `Windows.old` are not touched.
+- **edge-cache, edge-profile:** Edge has no command for clearing its data, so
+  Resik deletes files itself, only in `%LOCALAPPDATA%\Microsoft\Edge\User Data`
+  (Edge stable; Beta, Dev, and Canary are not touched). Both are refused while
+  `msedge.exe` runs; Startup boost can keep Edge running with no window, so
+  turn it off in Edge's settings or end Edge in Task Manager first.
+  `edge-cache` empties `Cache`, `Code Cache`, `GPUCache`, and the Dawn shader
+  caches of each profile, plus the shared `ShaderCache`, `GrShaderCache`,
+  `GraphiteDawnCache`, and `GPUPersistentCache`. History, cookies, passwords,
+  site data, extensions, and settings are kept.
+- **edge-profile:** for people who don't use Edge. It deletes the whole
+  `User Data` folder, so Edge starts as if newly installed; only what Edge sync
+  stored in a Microsoft account comes back. It cannot be recovered, so
+  `--all` and "select all" never choose it, and Resik asks before deleting,
+  even with `--force` (unless you answered `a`); without a terminal nothing is
+  removed. Edge itself stays installed, and WebView2, which Windows and other
+  apps use, keeps its data elsewhere and is not affected. Its size includes
+  `edge-cache`'s, so the total counts that part twice if you pick both.
+- **ie-cache:** Internet Explorer is retired, but apps that download through
+  its WinINet library still use this cache. Microsoft documents no command to
+  clear it, so Resik empties the cache folders (the 8-character folders in
+  `INetCache\IE` and `INetCache\Low\IE`) and keeps the folders and
+  `container.dat`. Cookies and history are kept, so apps stay signed in, and
+  Office's `Content.MSO` and `Content.Word` folders are not touched.
 
 #### Developer tools
 
@@ -414,7 +456,8 @@ src/Resik/
     Deletion.ps1          link-safe deletion (leftover data and Windows caches)
     Catalog.ps1           registered cleanup targets
   WindowsCleanup/         RecycleBin, ShaderCache, ThumbnailCache, Screenshots,
-                          WindowsUpdate, DeliveryOptimization
+                          TempFiles, WindowsUpdate, WindowsLogs,
+                          DeliveryOptimization, Edge, InternetCache
   DeveloperCleanup/       one file per tool: Uv, Pip, Poetry, Conda,
                           HuggingFace, PyTorch (torch-inductor, triton),
                           Npm, Pnpm, Yarn, Bun, Deno, Composer, Go, Dart,

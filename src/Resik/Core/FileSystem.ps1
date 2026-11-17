@@ -229,6 +229,34 @@ function Measure-ResikDirectoryContent {
     [pscustomobject]@{ Bytes = $bytes; Files = $files; Unreadable = $unreadable }
 }
 
+function Test-ResikRealFolder {
+    # True when Path is an existing folder inside (or equal to) Base, and
+    # neither it nor any folder between it and Base is a link, so deletion
+    # cannot be redirected outside Base. Base itself may be a link.
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Path,
+
+        [Parameter(Mandatory)]
+        [string] $Base
+    )
+
+    $reparse = [System.IO.FileAttributes]::ReparsePoint
+    $baseFull = [System.IO.Path]::GetFullPath($Base).TrimEnd('\')
+    $current = New-Object System.IO.DirectoryInfo ([System.IO.Path]::GetFullPath($Path).TrimEnd('\'))
+    if (-not $current.Exists) { return $false }
+    while ($null -ne $current) {
+        $full = $current.FullName.TrimEnd('\')
+        if ($full -ieq $baseFull) { return $true }
+        if (-not $full.StartsWith("$baseFull\", [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+        if ($current.Attributes -band $reparse) { return $false }
+        $current = $current.Parent
+    }
+    $false
+}
+
 function Get-ResikLocalAppDataPath {
     # %LOCALAPPDATA%, as a function so tests can point it at TestDrive.
     [CmdletBinding()]
