@@ -351,6 +351,8 @@ Describe 'windows-update target' {
 Describe 'delivery-optimization target' {
     BeforeAll {
         function New-TestDoFile {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+                Justification = 'Creates an in-memory object only.')]
             param([long] $Bytes, [switch] $Pinned, [switch] $Downloading)
             [pscustomobject]@{ Bytes = $Bytes; Pinned = [bool]$Pinned; Downloading = [bool]$Downloading }
         }
