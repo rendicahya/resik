@@ -5,7 +5,8 @@ A safe, native PowerShell cleanup utility for Windows and developer-tool caches.
 > DirectX shader and thumbnail caches, deletes screenshots on request, runs
 > Windows Update cleanup, clears the Delivery Optimization cache, and cleans
 > the caches of uv, pip, Poetry, Conda,
-> Hugging Face, PyTorch Inductor, Triton, npm, pnpm, Yarn, Composer, Go, Scoop,
+> Hugging Face, PyTorch Inductor, Triton, npm, pnpm, Yarn, Bun, Deno, Composer,
+> Go, Dart and Flutter, Scoop,
 > Chocolatey, and NuGet, and Playwright's browsers.
 > For Gradle, Maven, and JetBrains IDEs it only reports sizes. It never cleans
 > anything without showing you the plan first and asking for confirmation.
@@ -196,9 +197,12 @@ folders (or folders containing them), or symbolic links and junctions.
 | `npm` | npm's package cache (`<cache>\_cacache`) | `npm cache clean --force` | Low |
 | `pnpm` | Packages in the pnpm store that no project uses | `pnpm store prune` | Low |
 | `yarn` | The global Yarn Classic (1.x) cache | `yarn cache clean` | Low |
+| `bun` | Bun's global package cache | `bun pm cache rm` | Low |
+| `deno` | Deno's cache folder (`DENO_DIR`) | `deno clean` | Medium |
 | `composer` | Composer's cache (packages, repository metadata, VCS clones) | `composer global clear-cache --no-interaction` | Low |
 | `go-build` | The Go build cache (`GOCACHE`) | `go clean -cache` | Low |
 | `go-modules` | Every downloaded Go module (`GOMODCACHE`) | `go clean -modcache` | Medium |
+| `dart` | Every downloaded Dart and Flutter package (`PUB_CACHE`) | `dart pub cache clean --force` | Medium |
 | `playwright` | Browsers that Playwright downloaded | `playwright uninstall --all` | Medium |
 | `scoop-apps` | Old versions of installed Scoop apps | `scoop cleanup *` | Low |
 | `scoop-cache` | Installers in Scoop's download cache | `scoop cache rm *` | Low |
@@ -247,9 +251,22 @@ What these remove is downloaded again when needed. Details:
   `go env GOMODCACHE`. The build cache only speeds up builds and tests. The
   module cache holds downloaded source, so builds download it again and fail
   while offline; hence Medium risk. `GOCACHE=off` is skipped.
-- pnpm, Yarn, and Go run in your user profile folder, so a `package.json`,
-  `.npmrc`, `.yarnrc`, or `go.mod` in the folder you start Resik from cannot
-  change which cache is cleaned or make Go download another toolchain.
+- **bun:** the folder comes from `bun pm cache`. Projects and their
+  `node_modules` folders are kept.
+- **deno:** the folder comes from `deno info --json`. `deno clean` removes all
+  of `DENO_DIR`: downloaded modules and npm packages, compiled TypeScript,
+  and the localStorage data that Deno scripts saved; hence Medium risk. Scripts
+  installed with `deno install -g` are kept.
+- **dart:** Dart has no command that prints the cache folder, so Resik reads it
+  the way pub does: `PUB_CACHE`, else `%LOCALAPPDATA%\Pub\Cache`. Works with
+  `dart.exe` or Flutter's `dart.bat`, and needs Dart 2.14 or later. Tools
+  installed with `dart pub global activate` live in the cache and are removed
+  too, and every project needs `dart pub get` (or `flutter pub get`) again;
+  hence Medium risk. `--force` only skips pub's own question; Resik still asks.
+- pnpm, Yarn, Bun, Deno, Dart, and Go run in your user profile folder, so a
+  `package.json`, `.npmrc`, `.yarnrc`, `bunfig.toml`, `deno.json`, or `go.mod`
+  in the folder you start Resik from cannot change which cache is cleaned or
+  make Go download another toolchain.
 - **composer:** needs `composer.bat` (Composer-Setup) or a `composer.cmd` shim
   (Scoop) on PATH. The folders come from `composer global config cache-dir`
   (and `cache-files-dir`, `cache-repo-dir`, `cache-vcs-dir`); `global` makes
@@ -400,7 +417,7 @@ src/Resik/
                           WindowsUpdate, DeliveryOptimization
   DeveloperCleanup/       one file per tool: Uv, Pip, Poetry, Conda,
                           HuggingFace, PyTorch (torch-inductor, triton),
-                          Npm, Pnpm, Yarn, Composer, Go,
+                          Npm, Pnpm, Yarn, Bun, Deno, Composer, Go, Dart,
                           Playwright, Scoop,
                           Chocolatey, NuGet, JetBrains (the analysis-only
                           jetbrains and jetbrains-leftovers), and the

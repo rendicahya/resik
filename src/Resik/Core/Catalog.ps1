@@ -24,9 +24,12 @@ function Get-ResikTargetCatalog {
     New-ResikNpmTarget
     New-ResikPnpmTarget
     New-ResikYarnTarget
+    New-ResikBunTarget
+    New-ResikDenoTarget
     New-ResikComposerTarget
     New-ResikGoBuildTarget
     New-ResikGoModulesTarget
+    New-ResikDartTarget
     New-ResikPlaywrightTarget
     New-ResikScoopAppsTarget
     New-ResikScoopCacheTarget
