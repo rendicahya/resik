@@ -347,3 +347,104 @@ Describe 'windows-update target' {
         $script:dismArgs | Should -BeNullOrEmpty
     }
 }
+
+Describe 'delivery-optimization target' {
+    BeforeAll {
+        function New-TestDoFile {
+            param([long] $Bytes, [switch] $Pinned, [switch] $Downloading)
+            [pscustomobject]@{ Bytes = $Bytes; Pinned = [bool]$Pinned; Downloading = [bool]$Downloading }
+        }
+    }
+
+    BeforeEach {
+        $script:doFiles = @(
+            (New-TestDoFile -Bytes 1000),
+            (New-TestDoFile -Bytes 2000),
+            (New-TestDoFile -Bytes 500 -Pinned)
+        )
+        $script:deleted = 0
+        Mock Test-ResikDeliveryOptimizationAvailable { $true }
+        Mock Get-ResikDeliveryOptimizationFile { $script:doFiles }
+        Mock Get-ResikDeliveryOptimizationDrive { $TestDrive }
+        Mock Clear-ResikDeliveryOptimizationCache {
+            $script:deleted++
+            $script:doFiles = @($script:doFiles | Where-Object { $_.Pinned })
+        }
+        Mock Write-Host {}
+    }
+
+    It 'is a low-risk target that --all can choose' {
+        $target = New-ResikDeliveryOptimizationTarget
+        $target.ExplicitOnly | Should -BeFalse
+        $target.RiskLevel | Should -BeExactly 'Low'
+        @(Resolve-ResikSelection -Targets @($target) -All).Count | Should -Be 1
+    }
+
+    It 'is not detected without the DeliveryOptimization module' {
+        Mock Test-ResikDeliveryOptimizationAvailable { $false }
+        (Invoke-ResikTargetAnalysis -Target (New-ResikDeliveryOptimizationTarget)).Message |
+            Should -BeExactly 'Not detected: The DeliveryOptimization PowerShell module was not found.'
+    }
+
+    It 'counts only files that are not pinned, without deleting anything' {
+        $result = Invoke-ResikTargetAnalysis -Target (New-ResikDeliveryOptimizationTarget)
+
+        $result.Status | Should -BeExactly 'AnalysisOnly'
+        $result.EstimatedBytes | Should -Be 3000
+        $result.Message | Should -BeExactly '2 file(s) in the Delivery Optimization cache; 1 pinned file(s) are kept'
+        $script:deleted | Should -Be 0
+    }
+
+    It 'clears the cache, keeps pinned files, and measures the result' {
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikDeliveryOptimizationTarget)
+
+        $result.Status | Should -BeExactly 'Success'
+        $result.MeasuredBytes | Should -Be 3000
+        $result.Message | Should -BeExactly 'Deleted 2 file(s) from the Delivery Optimization cache. Kept 1 pinned file(s).'
+        $script:deleted | Should -Be 1
+    }
+
+    It 'does not interrupt a download in progress' {
+        $script:doFiles += New-TestDoFile -Bytes 10 -Downloading
+
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikDeliveryOptimizationTarget)
+
+        $result.Status | Should -BeExactly 'Skipped'
+        $result.Message | Should -BeLike 'Windows is still downloading*'
+        $script:deleted | Should -Be 0
+    }
+
+    It 'does nothing when only pinned files are cached' {
+        $script:doFiles = @(New-TestDoFile -Bytes 500 -Pinned)
+
+        (Invoke-ResikTargetCleanup -Target (New-ResikDeliveryOptimizationTarget)).Status | Should -BeExactly 'Skipped'
+        $script:deleted | Should -Be 0
+    }
+
+    It 'reports a failure when nothing was removed' {
+        Mock Clear-ResikDeliveryOptimizationCache { throw 'Access is denied.' }
+
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikDeliveryOptimizationTarget)
+
+        $result.Status | Should -BeExactly 'Failed'
+        $result.Message | Should -BeExactly '2 file(s) are still in the Delivery Optimization cache: Access is denied.'
+        $result.MeasuredBytes | Should -Be 0
+    }
+}
+
+Describe 'Get-ResikDeliveryOptimizationFile' {
+    It 'reads size, pinning, and download state from Get-DeliveryOptimizationStatus' {
+        function Get-DeliveryOptimizationStatus {
+            [pscustomobject]@{ FileSizeInCache = [uint64]42; IsPinned = $true; Status = 'Caching' }
+            [pscustomobject]@{ FileSizeInCache = [uint64]7; IsPinned = $false; Status = 'Downloading' }
+        }
+
+        $files = @(Get-ResikDeliveryOptimizationFile)
+
+        $files.Count | Should -Be 2
+        $files[0].Bytes | Should -Be 42
+        $files[0].Pinned | Should -BeTrue
+        $files[0].Downloading | Should -BeFalse
+        $files[1].Downloading | Should -BeTrue
+    }
+}

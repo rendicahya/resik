@@ -19,6 +19,7 @@ $resikSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'src\Resik'
 . (Join-Path $resikSource 'WindowsCleanup\ThumbnailCache.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\Screenshots.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\WindowsUpdate.ps1')
+. (Join-Path $resikSource 'WindowsCleanup\DeliveryOptimization.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Uv.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Pip.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Poetry.ps1')

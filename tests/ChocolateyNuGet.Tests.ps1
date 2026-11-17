@@ -119,7 +119,7 @@ Describe 'Target catalog' {
         Mock Get-ResikTritonCacheLocation { New-ResikCacheLocation -Path 'C:\u\.triton\cache' }
         Mock Get-ResikOneDriveFolder {}
         $catalog = @(Get-ResikTargetCatalog)
-        $catalog.Count | Should -Be 28
+        $catalog.Count | Should -Be 29
         @($catalog | Where-Object { $null -eq $_.Clean } | ForEach-Object { $_.Id }) | Should -Be @('gradle', 'maven', 'jetbrains')
         @($catalog.Id | Select-Object -Unique).Count | Should -Be $catalog.Count
     }

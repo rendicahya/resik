@@ -13,6 +13,7 @@ function Get-ResikTargetCatalog {
     New-ResikThumbnailCacheTarget
     New-ResikScreenshotsTarget
     New-ResikWindowsUpdateTarget
+    New-ResikDeliveryOptimizationTarget
     New-ResikUvTarget
     New-ResikPipTarget
     New-ResikPoetryTarget

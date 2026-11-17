@@ -3,7 +3,7 @@ A safe, native PowerShell cleanup utility for Windows and developer-tool caches.
 
 > **Status: early development.** Resik empties the Recycle Bin, clears the
 > DirectX shader and thumbnail caches, deletes screenshots on request, runs
-> Windows Update cleanup, and cleans
+> Windows Update cleanup, clears the Delivery Optimization cache, and cleans
 > the caches of uv, pip, Poetry, Conda,
 > Hugging Face, PyTorch Inductor, Triton, npm, pnpm, Yarn, Composer, Go, Scoop,
 > Chocolatey, and NuGet, and Playwright's browsers.
@@ -143,6 +143,7 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
 | `thumbnails` | File Explorer's thumbnail cache (`thumbcache_*.db`) | Resik deletes the matching files | Low |
 | `screenshots` | The screenshots in your Screenshots folder (by default `Pictures\Screenshots`) | Resik deletes the image files | High |
 | `windows-update` | Component-store copies of updates that newer updates replaced | `Dism.exe /Online /Cleanup-Image /StartComponentCleanup` | Medium |
+| `delivery-optimization` | Windows Update, Microsoft Store, and Office downloads kept to share with other PCs | `Delete-DeliveryOptimizationCache -Force` | Low |
 
 - **recycle-bin:** the deleted files cannot be restored afterwards, so `--all`
   and "select all" in the picker never choose it; name it with
@@ -170,6 +171,13 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
   estimate is shown; the result is the change in free space on the system
   drive. `/ResetBase` is never used, so installed updates can still be
   uninstalled. It can take 10 minutes or more.
+- **delivery-optimization:** uses Windows' own DeliveryOptimization PowerShell
+  module (Windows 10 1903 or later) and needs no administrator rights. The size
+  comes from `Get-DeliveryOptimizationStatus`. Pinned files are kept, and
+  nothing is deleted while a file is still downloading, so an update in
+  progress is not interrupted. Windows downloads the files again if it needs
+  them; until then, other PCs on your network cannot get them from yours.
+  `C:\Windows\SoftwareDistribution\Download` and `Windows.old` are not touched.
 
 #### Developer tools
 
@@ -389,7 +397,7 @@ src/Resik/
     Deletion.ps1          link-safe deletion (leftover data and Windows caches)
     Catalog.ps1           registered cleanup targets
   WindowsCleanup/         RecycleBin, ShaderCache, ThumbnailCache, Screenshots,
-                          WindowsUpdate
+                          WindowsUpdate, DeliveryOptimization
   DeveloperCleanup/       one file per tool: Uv, Pip, Poetry, Conda,
                           HuggingFace, PyTorch (torch-inductor, triton),
                           Npm, Pnpm, Yarn, Composer, Go,
