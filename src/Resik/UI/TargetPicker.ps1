@@ -139,7 +139,34 @@ function New-ResikPickerState {
         Items  = $flat.ToArray()
         Rows   = $rows.ToArray()
         Cursor = 0
+        # The first row drawn when the list is taller than the window.
+        Top    = 0
     }
+}
+
+function Update-ResikPickerScroll {
+    # Moves State.Top as little as possible so the cursor row is among the
+    # Visible rows drawn from Top, and no space is left empty below the list.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Changes an in-memory object only.')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [object] $State,
+
+        [Parameter(Mandatory)]
+        [int] $Visible
+    )
+
+    $count = $State.Rows.Count
+    $top = [int]$State.Top
+    if ($Visible -lt 1 -or $count -le $Visible) {
+        $State.Top = 0
+        return
+    }
+    if ($State.Cursor -lt $top) { $top = $State.Cursor }
+    if ($State.Cursor -ge $top + $Visible) { $top = $State.Cursor - $Visible + 1 }
+    $State.Top = [Math]::Max(0, [Math]::Min($top, $count - $Visible))
 }
 
 function Switch-ResikPickerRow {
@@ -330,6 +357,10 @@ function Format-ResikPickerScreen {
     # default color), and Row (the index into State.Rows a click on the line
     # selects, or -1). Every line is padded or cut to Width - 1 characters so
     # that redrawing in place never wraps, and the line count never changes.
+    # With a Height, the screen has at most Height - 1 lines, so drawing it
+    # never scrolls the window: when the rows do not fit, only the rows around
+    # the cursor are drawn (State.Top), and the blank lines around the list
+    # say how many rows are hidden above and below.
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -339,6 +370,10 @@ function Format-ResikPickerScreen {
 
         [ValidateRange(20, 10000)]
         [int] $Width = 80,
+
+        # The window height in lines; 0 draws every row.
+        [ValidateRange(0, 10000)]
+        [int] $Height = 0,
 
         # The console reports mouse clicks, so the help line mentions them.
         [switch] $Mouse
@@ -361,12 +396,23 @@ function Format-ResikPickerScreen {
         'Up/Down move   Space select   A all   N none   Enter confirm   Q cancel'
     }
 
+    # Seven lines besides the rows: title, help, the line above the header,
+    # header, the line below the rows, details, and the selected total.
+    $count = $State.Rows.Count
+    $visible = $count
+    if ($Height -gt 0) { $visible = [Math]::Min($count, [Math]::Max(1, $Height - 1 - 7)) }
+    Update-ResikPickerScroll -State $State -Visible $visible
+    $first = [int]$State.Top
+    $last = $first + $visible
+    $above = if ($first -gt 0) { "  ^ $first more above" } else { '' }
+    $below = if ($last -lt $count) { "  v $($count - $last) more below" } else { '' }
+
     & $addLine $Title 'White'
     & $addLine $help 'DarkGray'
-    & $addLine ''
+    & $addLine $above 'DarkGray'
     & $addLine $header 'DarkGray'
 
-    for ($index = 0; $index -lt $State.Rows.Count; $index++) {
+    for ($index = $first; $index -lt $last; $index++) {
         $row = $State.Rows[$index]
         $isCursor = $index -eq $State.Cursor
         $pointer = if ($isCursor) { '>' } else { ' ' }
@@ -384,7 +430,7 @@ function Format-ResikPickerScreen {
         & $addLine "$pointer $box $text" $color $index
     }
 
-    & $addLine ''
+    & $addLine $below 'DarkGray'
     $details = ''
     if ($State.Rows.Count -gt 0) {
         $current = $State.Rows[$State.Cursor]
@@ -410,6 +456,15 @@ function Get-ResikConsoleWidth {
     [OutputType([int])]
     param()
     try { [Math]::Max(20, [Console]::WindowWidth) } catch { 80 }
+}
+
+function Get-ResikConsoleHeight {
+    # The window height in lines, or 0 when it cannot be read (then the
+    # picker draws every row).
+    [CmdletBinding()]
+    [OutputType([int])]
+    param()
+    try { [Math]::Max(0, [Console]::WindowHeight) } catch { 0 }
 }
 
 function Get-ResikConsoleCursorRow {
@@ -639,14 +694,21 @@ function Show-ResikTargetPicker {
     $mouseMode = Enable-ResikPickerMouse
     try {
         $origin = $null
+        $drawn = 0
         while ($true) {
-            $lines = @(Format-ResikPickerScreen -State $State -Title $Title -Width (Get-ResikConsoleWidth) -Mouse:($null -ne $mouseMode))
+            $width = Get-ResikConsoleWidth
+            $lines = @(Format-ResikPickerScreen -State $State -Title $Title -Width $width -Height (Get-ResikConsoleHeight) -Mouse:($null -ne $mouseMode))
             if ($null -ne $origin) { Move-ResikConsoleCursor -Row $origin }
             foreach ($line in $lines) {
                 if ($line.Color) { Write-Host $line.Text -ForegroundColor $line.Color } else { Write-Host $line.Text }
             }
-            # Measured after the first draw, because drawing can scroll the window.
-            if ($null -eq $origin) { $origin = (Get-ResikConsoleCursorRow) - $lines.Count }
+            # A window made shorter draws fewer lines; blank the rest of the
+            # previous drawing.
+            $blank = ''.PadRight([Math]::Max(0, $width - 1))
+            for ($extra = $lines.Count; $extra -lt $drawn; $extra++) { Write-Host $blank }
+            $drawn = [Math]::Max($lines.Count, $drawn)
+            # Measured after every draw, because drawing can scroll the window.
+            $origin = (Get-ResikConsoleCursorRow) - $drawn
 
             $next = if ($null -ne $mouseMode) { Read-ResikPickerEvent } else { Read-ResikPickerKey }
             if ($next -is [string]) {

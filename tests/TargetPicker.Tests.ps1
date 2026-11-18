@@ -307,12 +307,98 @@ Describe 'Format-ResikPickerScreen' {
         @(Format-ResikPickerScreen -State $state).Count | Should -Be $before
         $before | Should -Be ($state.Items.Count + 7)
     }
+
+    It 'draws every row when the window is tall enough' {
+        $state = New-TestPickerState
+        $lines = @(Format-ResikPickerScreen -State $state -Height 11)
+        $lines.Count | Should -Be 10
+        @($lines | Where-Object { $_.Row -ge 0 }).Count | Should -Be 3
+        $state.Top | Should -Be 0
+    }
+}
+
+Describe 'Format-ResikPickerScreen in a short window' {
+    BeforeAll {
+        function New-TestLongState {
+            $targets = @()
+            $analysis = @()
+            for ($index = 1; $index -le 30; $index++) {
+                $id = 't{0:d2}' -f $index
+                $targets += New-TestTarget -Id $id -Clean { }
+                # Sizes fall with the index, so the list keeps catalog order.
+                $analysis += New-ResikResult -TargetId $id -Operation Analyze -Status AnalysisOnly -Message $id -EstimatedBytes (1000 * (31 - $index))
+            }
+            New-ResikPickerState -Targets $targets -Analysis $analysis
+        }
+    }
+
+    It 'fits the window, draws the rows around the cursor, and says how many are hidden' {
+        $state = New-TestLongState
+        # Twenty lines: at most 19 drawn, 7 of them besides the rows, so 12 rows.
+        $lines = @(Format-ResikPickerScreen -State $state -Width 60 -Height 20)
+        $lines.Count | Should -Be 19
+        @($lines | Where-Object { $_.Row -ge 0 } | ForEach-Object { $_.Row }) | Should -Be @(0..11)
+        $lines[2].Text.TrimEnd() | Should -BeExactly ''
+        $lines[16].Text.TrimEnd() | Should -BeExactly '  v 18 more below'
+    }
+
+    It 'scrolls only when the cursor leaves the drawn rows' {
+        $state = New-TestLongState
+        for ($step = 0; $step -lt 12; $step++) { Invoke-ResikPickerKey -State $state -Command Down | Out-Null }
+        $lines = @(Format-ResikPickerScreen -State $state -Width 60 -Height 20)
+        $state.Top | Should -Be 1
+        @($lines | Where-Object { $_.Row -ge 0 } | ForEach-Object { $_.Row }) | Should -Be @(1..12)
+        $lines[2].Text.TrimEnd() | Should -BeExactly '  ^ 1 more above'
+        $lines[16].Text.TrimEnd() | Should -BeExactly '  v 17 more below'
+
+        Invoke-ResikPickerKey -State $state -Command Up | Out-Null
+        Format-ResikPickerScreen -State $state -Width 60 -Height 20 | Out-Null
+        $state.Top | Should -Be 1
+    }
+
+    It 'shows the end of the list when the cursor wraps to the last row' {
+        $state = New-TestLongState
+        Invoke-ResikPickerKey -State $state -Command Up | Out-Null
+        $lines = @(Format-ResikPickerScreen -State $state -Width 60 -Height 20)
+        $lines.Count | Should -Be 19
+        @($lines | Where-Object { $_.Row -ge 0 } | ForEach-Object { $_.Row }) | Should -Be @(18..29)
+        $lines[16].Text.TrimEnd() | Should -BeExactly ''
+        $lines[2].Text.TrimEnd() | Should -BeExactly '  ^ 18 more above'
+
+        Invoke-ResikPickerKey -State $state -Command Down | Out-Null
+        Format-ResikPickerScreen -State $state -Width 60 -Height 20 | Out-Null
+        $state.Top | Should -Be 0
+    }
+
+    It 'maps a click on a scrolled list to the row drawn there' {
+        Mock Write-Host {}
+        Mock Get-ResikConsoleWidth { 60 }
+        Mock Get-ResikConsoleHeight { 20 }
+        Mock Get-ResikConsoleCursorRow { 19 }
+        Mock Move-ResikConsoleCursor {}
+        Mock Enable-ResikPickerMouse { 7 }
+        Mock Disable-ResikPickerMouse {}
+        $script:events = New-Object System.Collections.Generic.Queue[object]
+        Mock Read-ResikPickerEvent { $script:events.Dequeue() }
+        $state = New-TestLongState
+        # The wrap to the last row scrolls to rows 18..29; the screen starts at
+        # console row 0, so its first target row (t19) is console row 4.
+        $script:events.Enqueue('Up')
+        $script:events.Enqueue([pscustomobject]@{ Command = 'Click'; Y = 4 })
+        $script:events.Enqueue('Confirm')
+
+        Show-ResikTargetPicker -State $state | Should -BeExactly 'Confirm'
+
+        @($state.Items | Where-Object Selected | ForEach-Object { $_.Target.Id }) | Should -Be @('t19')
+        Should -Invoke Move-ResikConsoleCursor -ParameterFilter { $Row -eq 0 }
+    }
 }
 
 Describe 'Show-ResikTargetPicker' {
     BeforeEach {
         Mock Write-Host {}
         Mock Get-ResikConsoleWidth { 100 }
+        Mock Get-ResikConsoleHeight { 0 }
         Mock Get-ResikConsoleCursorRow { 50 }
         Mock Move-ResikConsoleCursor {}
         $script:keys = New-Object System.Collections.Generic.Queue[string]
