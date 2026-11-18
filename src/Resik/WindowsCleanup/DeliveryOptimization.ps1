@@ -11,8 +11,10 @@
 # which Resik never does, so the estimate counts only files that are not
 # pinned. Cleanup is skipped while a file is still downloading, so an update
 # in progress is not interrupted. Neither cmdlet needs administrator rights.
-# The delete cmdlet prints its own messages with Write-Host; they are
-# discarded so they cannot garble the spinner.
+# The delete cmdlet prints its own messages with Write-Host, and the status
+# cmdlet warns "No active Delivery Optimization download or upload jobs"
+# when the cache is empty; both are discarded so they cannot garble the
+# spinner.
 
 function Test-ResikDeliveryOptimizationAvailable {
     [CmdletBinding()]
@@ -26,7 +28,7 @@ function Get-ResikDeliveryOptimizationFile {
     # Emits one record per file in the cache.
     [CmdletBinding()]
     param()
-    foreach ($file in @(Get-DeliveryOptimizationStatus -ErrorAction Stop)) {
+    foreach ($file in @(Get-DeliveryOptimizationStatus -ErrorAction Stop -WarningAction SilentlyContinue)) {
         [pscustomobject]@{
             Bytes       = [long](Get-ResikOptionalProperty $file 'FileSizeInCache')
             Pinned      = [bool](Get-ResikOptionalProperty $file 'IsPinned')
@@ -51,7 +53,7 @@ function Clear-ResikDeliveryOptimizationCache {
     [CmdletBinding(SupportsShouldProcess)]
     param()
     if ($PSCmdlet.ShouldProcess('Delivery Optimization cache', 'Delete')) {
-        Delete-DeliveryOptimizationCache -Force -ErrorAction Stop 6>$null
+        Delete-DeliveryOptimizationCache -Force -ErrorAction Stop -WarningAction SilentlyContinue 6>$null
     }
 }
 

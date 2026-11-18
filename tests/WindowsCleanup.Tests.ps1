@@ -449,4 +449,16 @@ Describe 'Get-ResikDeliveryOptimizationFile' {
         $files[0].Downloading | Should -BeFalse
         $files[1].Downloading | Should -BeTrue
     }
+
+    It 'discards the warning Get-DeliveryOptimizationStatus prints for an empty cache' {
+        function Get-DeliveryOptimizationStatus {
+            [CmdletBinding()]
+            param()
+            Write-Warning 'No active Delivery Optimization download or upload jobs'
+        }
+
+        $output = @(Get-ResikDeliveryOptimizationFile 3>&1)
+
+        $output.Count | Should -Be 0
+    }
 }
