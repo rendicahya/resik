@@ -46,6 +46,7 @@ function Get-ResikSourceFile {
     'AppCleanup\AppCache.ps1'
     'AppCleanup\Chromium.ps1'
     'AppCleanup\Zotero.ps1'
+    'AppCleanup\Firefox.ps1'
     'AppCleanup\Nvidia.ps1'
     'DeveloperCleanup\Uv.ps1'
     'DeveloperCleanup\Pip.ps1'

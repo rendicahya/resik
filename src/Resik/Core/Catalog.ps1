@@ -29,6 +29,8 @@ function Get-ResikTargetCatalog {
     New-ResikChromiumBrowserTarget -BrowserId 'chrome'
     New-ResikChromiumBrowserTarget -BrowserId 'brave'
     New-ResikChromiumBrowserTarget -BrowserId 'comet'
+    New-ResikChromiumBrowserTarget -BrowserId 'vivaldi'
+    New-ResikFirefoxTarget
     foreach ($app in Get-ResikChromiumAppId) { New-ResikChromiumTarget -SpecId $app }
     New-ResikZoteroTarget
     New-ResikUvTarget

@@ -34,7 +34,7 @@ Describe 'Chromium browser targets' {
 
     It 'registers four parts per browser, with service workers Medium and explicit-only' {
         $catalog = @(Get-ResikTargetCatalog)
-        foreach ($browser in 'chrome', 'brave', 'comet') {
+        foreach ($browser in 'chrome', 'brave', 'comet', 'vivaldi') {
             foreach ($part in 'cache', 'code-cache', 'gpu-cache') {
                 $target = $catalog | Where-Object Id -eq "$browser-$part"
                 $target.RiskLevel | Should -BeExactly 'Low'
@@ -175,6 +175,51 @@ Describe 'other app cache targets' {
         $result = Invoke-ResikTargetCleanup -Target (New-ResikZoteroTarget) -CanPrompt $true
         $result.MeasuredBytes | Should -Be 320
         Join-Path $profileFolder 'safebrowsing\x' | Should -Exist
+    }
+
+    It 'vivaldi-cache finds Vivaldi''s profiles in its User Data folder' {
+        $userData = Join-Path $script:local 'Vivaldi\User Data'
+        New-TestFile -Path (Join-Path $userData 'Default\Preferences') -Size 1
+        New-TestFile -Path (Join-Path $userData 'Default\Cache\Cache_Data\d') -Size 600
+        New-TestFile -Path (Join-Path $userData 'Default\History') -Size 9
+
+        $target = New-ResikChromiumTarget -SpecId 'vivaldi' -PartId 'cache'
+        (Invoke-ResikTargetAnalysis -Target $target).EstimatedBytes | Should -Be 600
+        (Invoke-ResikTargetCleanup -Target $target -CanPrompt $true).MeasuredBytes | Should -Be 600
+        Join-Path $userData 'Default\History' | Should -Exist
+    }
+
+    It 'firefox-cache empties cache2 and startupCache in every local profile only' {
+        $profileRoot = Join-Path $script:local 'Mozilla\Firefox\Profiles'
+        New-TestFile -Path (Join-Path $profileRoot 'a.default-release\cache2\entries\e') -Size 700
+        New-TestFile -Path (Join-Path $profileRoot 'a.default-release\startupCache\s') -Size 40
+        New-TestFile -Path (Join-Path $profileRoot 'b.dev\cache2\entries\f') -Size 60
+        New-TestFile -Path (Join-Path $profileRoot 'a.default-release\safebrowsing\x') -Size 5
+        New-TestFile -Path (Join-Path $profileRoot 'a.default-release\thumbnails\t') -Size 6
+
+        $target = New-ResikFirefoxTarget
+        $target.Category | Should -BeExactly 'Apps'
+        (Invoke-ResikTargetAnalysis -Target $target).EstimatedBytes | Should -Be 800
+        $result = Invoke-ResikTargetCleanup -Target $target -CanPrompt $true
+        $result.Status | Should -BeExactly 'Success'
+        $result.MeasuredBytes | Should -Be 800
+        Join-Path $profileRoot 'a.default-release\cache2' | Should -Exist
+        Join-Path $profileRoot 'a.default-release\safebrowsing\x' | Should -Exist
+        Join-Path $profileRoot 'a.default-release\thumbnails\t' | Should -Exist
+    }
+
+    It 'firefox-cache is not detected without Firefox profiles' {
+        (Invoke-ResikTargetAnalysis -Target (New-ResikFirefoxTarget)).Message | Should -BeLike 'Not detected: *'
+    }
+
+    It 'matches Firefox by its install folders, never Playwright''s Firefox' {
+        $app = Get-ResikFirefoxApp
+        foreach ($case in @(
+                [pscustomobject]@{ Path = 'C:\Users\u\AppData\Local\ms-playwright\firefox-1466\firefox\firefox.exe'; Count = 0 },
+                [pscustomobject]@{ Path = 'C:\Program Files\Mozilla Firefox\firefox.exe'; Count = 1 },
+                [pscustomobject]@{ Path = 'C:\Users\u\scoop\apps\firefox\current\firefox.exe'; Count = 1 })) {
+            @($app.PathLike | Where-Object { $case.Path -like $_ }).Count | Should -Be $case.Count
+        }
     }
 
     It 'nvidia-shaders empties the driver caches in Local and LocalLow' {

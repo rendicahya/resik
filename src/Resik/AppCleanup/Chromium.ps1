@@ -1,5 +1,5 @@
 # Chromium-based browsers and apps: Microsoft Edge, Google Chrome, Brave,
-# Comet, and the apps built on Electron or CEF (the Claude desktop app,
+# Comet, Vivaldi, and the apps built on Electron or CEF (the Claude desktop app,
 # ClickUp, Visual Studio Code, Google Play Games).
 #
 # None of them has a command-line option for clearing caches, so Resik empties
@@ -33,7 +33,7 @@ function Get-ResikChromiumPartId {
 }
 
 function Get-ResikChromiumBrowserId {
-    'edge', 'chrome', 'brave', 'comet'
+    'edge', 'chrome', 'brave', 'comet', 'vivaldi'
 }
 
 function Get-ResikChromiumAppId {
@@ -110,6 +110,12 @@ function Get-ResikChromiumSpec {
             [pscustomobject]@{ Id = $Id; Name = 'Comet'; Category = 'Apps'; Browser = $true; Root = $root
                 App = New-ResikAppSpec -DisplayName 'Comet' -ProcessName 'comet' -LockFile (Join-Path $root 'lockfile')
                 Consequence = $tabs -f 'Comet'; ExtraFolders = @() }
+        }
+        'vivaldi' {
+            $root = Join-Path $local 'Vivaldi\User Data'
+            [pscustomobject]@{ Id = $Id; Name = 'Vivaldi'; Category = 'Apps'; Browser = $true; Root = $root
+                App = New-ResikAppSpec -DisplayName 'Vivaldi' -ProcessName 'vivaldi' -LockFile (Join-Path $root 'lockfile')
+                Consequence = $tabs -f 'Vivaldi'; ExtraFolders = @() }
         }
         'claude-desktop' {
             $root = Join-Path $roaming 'Claude'

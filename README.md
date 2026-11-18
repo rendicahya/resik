@@ -277,7 +277,7 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
 
 Chromium-based browsers are split into parts, so you can pick only what you
 want. Each `<browser>` below is `edge` (listed with Windows above), `chrome`,
-`brave`, or `comet`:
+`brave`, `comet`, or `vivaldi`:
 
 | ID | What it cleans (in every profile) | Risk |
 | --- | --- | --- |
@@ -295,6 +295,7 @@ Apps built on the same engine have one target each:
 | `vscode-cache` | The same caches of Visual Studio Code, plus `CachedData` and the downloaded extension installers in `CachedExtensionVSIXs` (`%APPDATA%\Code`) | Low |
 | `play-games-cache` | The same caches of Google Play Games (`%LOCALAPPDATA%\Google\Play Games\CEF\cache`) | Low |
 | `zotero-cache` | Zotero's web and startup caches (`cache2`, `startupCache` in `%LOCALAPPDATA%\Zotero\Zotero\Profiles`) | Low |
+| `firefox-cache` | Firefox's web and startup caches (`cache2`, `startupCache` in every profile in `%LOCALAPPDATA%\Mozilla\Firefox\Profiles`), like "Cached Web Content" in its settings | Low |
 
 - None of these apps has a command for clearing its cache, so Resik empties
   the folders itself (the folders are kept). Links are not followed, and a
@@ -309,8 +310,14 @@ Apps built on the same engine have one target each:
   closed without asking; browsers offer to restore them. Resik finds a running
   Chromium browser by its locked `User Data\lockfile`, wherever it is
   installed, and matches process names by path where they are ambiguous, so
-  Playwright's `chrome.exe` and the Claude Code CLI's `claude.exe` are never
-  closed.
+  Playwright's `chrome.exe` and `firefox.exe` and the Claude Code CLI's
+  `claude.exe` are never closed. Firefox is recognized when it runs from its
+  usual install folders (`Mozilla Firefox`, `Firefox Developer Edition`,
+  `Firefox Nightly`, Scoop, or the Microsoft Store); from anywhere else Resik
+  does not see it running, and files it has open are skipped and reported.
+- **firefox-cache:** bookmarks, history, cookies, passwords, and extensions are
+  in the profile in `%APPDATA%` and are not touched. A profile created in
+  another folder is not cleaned.
 - **service workers:** more than a cache, so `--all` and "select all" never
   choose them. Sites install their service workers again when you visit them;
   until then, offline use and push notifications from those sites stop.
@@ -572,7 +579,7 @@ src/Resik/
                           Edge (edge-profile), InternetCache
   AppCleanup/             AppCache (shared app cache helpers), Chromium
                           (browser parts and Electron/CEF apps), Zotero,
-                          Nvidia
+                          Firefox, Nvidia
   DeveloperCleanup/       one file per tool: Uv, Pip, Poetry, Conda,
                           HuggingFace, PyTorch (torch-inductor, triton),
                           Npm, Pnpm, Yarn, Bun, NodeGyp, Deno, Composer, Go,
