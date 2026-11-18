@@ -73,6 +73,9 @@ function Invoke-ResikCli {
         Runs Resik with raw command-line arguments and returns an exit code.
     .DESCRIPTION
         Targets is injected so the CLI can be tested against fake targets.
+        ParallelAnalysis may be set only when Targets come from
+        Get-ResikTargetCatalog, because background workers build their own
+        catalog and analyze targets by ID.
     #>
     [CmdletBinding()]
     [OutputType([int])]
@@ -82,7 +85,9 @@ function Invoke-ResikCli {
         [object[]] $Arguments = @(),
 
         [AllowEmptyCollection()]
-        [object[]] $Targets = @()
+        [object[]] $Targets = @(),
+
+        [switch] $ParallelAnalysis
     )
 
     if ($null -eq $Arguments) { $Arguments = @() }
@@ -115,7 +120,7 @@ function Invoke-ResikCli {
             Write-ResikError '--non-interactive requires --all or --only <id>[,<id>...].'
             return 2
         }
-        return (Invoke-ResikInteractiveRun -Targets $Targets -Options $options)
+        return (Invoke-ResikInteractiveRun -Targets $Targets -Options $options -ParallelAnalysis:$ParallelAnalysis)
     }
 
     try {
@@ -139,7 +144,7 @@ function Invoke-ResikCli {
     else {
         Write-Host 'Analyzing selected targets...'
     }
-    $analysis = @(Invoke-ResikAnalysisWithSpinner -Targets $selected)
+    $analysis = @(Invoke-ResikAnalysisWithSpinner -Targets $selected -ParallelAnalysis:$ParallelAnalysis)
     Write-Host ''
     # Tools that are not installed are named only when the user asked for them.
     foreach ($line in (Format-ResikSummary -Results $analysis -Targets $selected -Width (Get-ResikReportWidth) -ShowNotFound:$hasOnly)) {
@@ -166,7 +171,9 @@ function Invoke-ResikInteractiveRun {
         [AllowEmptyCollection()]
         [object[]] $Targets = @(),
 
-        [object] $Options
+        [object] $Options,
+
+        [switch] $ParallelAnalysis
     )
 
     $mode = Get-ResikPickerMode
@@ -180,7 +187,7 @@ function Invoke-ResikInteractiveRun {
     }
 
     Write-Host 'Analyzing targets...'
-    $analysis = @(Invoke-ResikAnalysisWithSpinner -Targets $Targets)
+    $analysis = @(Invoke-ResikAnalysisWithSpinner -Targets $Targets -ParallelAnalysis:$ParallelAnalysis)
     Write-Host ''
     $choice = Select-ResikTargetInteractive -Targets $Targets -Analysis $analysis -Mode $mode -DryRun:$Options.DryRun
     Write-Host ''
@@ -212,16 +219,21 @@ function Invoke-ResikInteractiveRun {
 
 function Invoke-ResikAnalysisWithSpinner {
     # Analysis can take a while (sizing large caches, starting tools), so a
-    # spinner shows which target is being analyzed.
+    # spinner shows which target is being analyzed. With ParallelAnalysis
+    # (catalog targets only), background workers analyze some of them.
     [CmdletBinding()]
     param(
         [AllowEmptyCollection()]
-        [object[]] $Targets = @()
+        [object[]] $Targets = @(),
+
+        [switch] $ParallelAnalysis
     )
 
+    $analysisArgs = @{ Targets = $Targets }
+    if ($ParallelAnalysis) { $analysisArgs.WorkerSourceRoot = Get-ResikSourceRoot }
     $spinner = Start-ResikSpinner -Message 'Analyzing targets'
     try {
-        Invoke-ResikAnalysis -Targets $Targets -Spinner $spinner
+        Invoke-ResikAnalysis @analysisArgs -Spinner $spinner
     }
     finally {
         Stop-ResikSpinner -Spinner $spinner

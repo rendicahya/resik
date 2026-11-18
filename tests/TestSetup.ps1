@@ -1,65 +1,15 @@
 # Dot-source this from a Pester BeforeAll block to load Resik's functions
-# without running the CLI entry point. Keep in sync with src/Resik/Resik.ps1.
+# without running the CLI entry point, from the same list as src/Resik/Resik.ps1.
 
 # Match the strict mode that src/Resik/Resik.ps1 runs under.
 Set-StrictMode -Version 3.0
 
 $resikSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'src\Resik'
 
-. (Join-Path $resikSource 'Core\Models.ps1')
-. (Join-Path $resikSource 'Core\Arguments.ps1')
-. (Join-Path $resikSource 'Core\Selection.ps1')
-. (Join-Path $resikSource 'Core\Analysis.ps1')
-. (Join-Path $resikSource 'Core\NativeCommand.ps1')
-. (Join-Path $resikSource 'Core\FileSystem.ps1')
-. (Join-Path $resikSource 'Core\Cleanup.ps1')
-. (Join-Path $resikSource 'Core\Process.ps1')
-. (Join-Path $resikSource 'Core\Deletion.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\RecycleBin.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\ShaderCache.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\ThumbnailCache.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\Screenshots.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\WindowsUpdate.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\DeliveryOptimization.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\DiskCleanup.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\Defender.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\ErrorReports.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\Edge.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\InternetCache.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\TempFiles.ps1')
-. (Join-Path $resikSource 'WindowsCleanup\WindowsLogs.ps1')
-. (Join-Path $resikSource 'AppCleanup\AppCache.ps1')
-. (Join-Path $resikSource 'AppCleanup\Chromium.ps1')
-. (Join-Path $resikSource 'AppCleanup\Zotero.ps1')
-. (Join-Path $resikSource 'AppCleanup\Nvidia.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Uv.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Pip.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Poetry.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Npm.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Pnpm.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Yarn.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Composer.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Go.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Bun.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\NodeGyp.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\NetBeans.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Deno.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Dart.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Scoop.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Chocolatey.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\NuGet.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Conda.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\HuggingFace.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\PyTorch.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Playwright.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Gradle.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\Maven.ps1')
-. (Join-Path $resikSource 'DeveloperCleanup\JetBrains.ps1')
-. (Join-Path $resikSource 'Core\Catalog.ps1')
-. (Join-Path $resikSource 'Core\Cli.ps1')
-. (Join-Path $resikSource 'Reporting\ConsoleReport.ps1')
-. (Join-Path $resikSource 'UI\TargetPicker.ps1')
-. (Join-Path $resikSource 'UI\Spinner.ps1')
+. (Join-Path $resikSource 'Core\SourceFiles.ps1')
+foreach ($resikSourceFile in Get-ResikSourceFile) {
+    . (Join-Path $resikSource $resikSourceFile)
+}
 
 # Tests run in a real console; keep the spinner from drawing during them.
 # Spinner.Tests.ps1 reloads the real function.

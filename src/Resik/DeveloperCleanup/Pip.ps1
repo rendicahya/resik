@@ -55,37 +55,72 @@ function Get-ResikPipPythonCandidate {
     }
 }
 
+function Test-ResikPipWork {
+    # True when "python -m pip --version" succeeds with this interpreter.
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $PythonPath
+    )
+    $run = Invoke-ResikNativeCommand -FilePath $PythonPath `
+        -ArgumentList @('-m', 'pip', '--version', '--disable-pip-version-check') -TimeoutSeconds 60
+    $run.Status -eq 'Success'
+}
+
 function Find-ResikPipPython {
     # Returns the first candidate whose pip works, or $null.
     [CmdletBinding()]
     param()
 
     foreach ($candidate in @(Get-ResikPipPythonCandidate)) {
-        $run = Invoke-ResikNativeCommand -FilePath $candidate.FilePath `
-            -ArgumentList @('-m', 'pip', '--version', '--disable-pip-version-check') -TimeoutSeconds 60
-        if ($run.Status -eq 'Success') {
+        if (Test-ResikPipWork -PythonPath $candidate.FilePath) {
             return $candidate
         }
     }
     $null
 }
 
-function Get-ResikPipCacheDirectory {
+function Invoke-ResikPipCacheDirCommand {
+    param([string] $PythonPath)
+    Invoke-ResikNativeCommand -FilePath $PythonPath `
+        -ArgumentList @('-m', 'pip', 'cache', 'dir', '--no-input', '--disable-pip-version-check') -TimeoutSeconds 60
+}
+
+function Find-ResikPipCache {
+    # Returns the interpreter Find-ResikPipPython would choose (as Python) and
+    # its validated cache folder (as CacheDir), or $null. "pip cache dir" runs
+    # first: when it works, pip works, so the "pip --version" check is needed
+    # only when it fails. Each Python start takes a few hundred milliseconds.
+    [CmdletBinding()]
+    param()
+
+    foreach ($candidate in @(Get-ResikPipPythonCandidate)) {
+        $run = Invoke-ResikPipCacheDirCommand -PythonPath $candidate.FilePath
+        if ($run.Status -ne 'Success' -and -not (Test-ResikPipWork -PythonPath $candidate.FilePath)) {
+            continue
+        }
+        return [pscustomobject]@{ Python = $candidate; CacheDir = (ConvertFrom-ResikPipCacheDirRun -Run $run) }
+    }
+    $null
+}
+
+function ConvertFrom-ResikPipCacheDirRun {
+    # The validated cache folder from a "pip cache dir" run; throws when the
+    # run failed or the folder is not safe to clean.
     [CmdletBinding()]
     [OutputType([string])]
     param(
         [Parameter(Mandatory)]
-        [string] $PythonPath
+        [object] $Run
     )
 
-    $run = Invoke-ResikNativeCommand -FilePath $PythonPath `
-        -ArgumentList @('-m', 'pip', 'cache', 'dir', '--no-input', '--disable-pip-version-check') -TimeoutSeconds 60
-    if ($run.Status -ne 'Success') {
-        throw (Get-ResikNativeCommandFailure $run)
+    if ($Run.Status -ne 'Success') {
+        throw (Get-ResikNativeCommandFailure $Run)
     }
-    $lines = @($run.StdOut -split "`r?`n" | Where-Object { $_.Trim() })
+    $lines = @($Run.StdOut -split "`r?`n" | Where-Object { $_.Trim() })
     if ($lines.Count -ne 1) {
-        throw "Unexpected output from '$($run.Command)'."
+        throw "Unexpected output from '$($Run.Command)'."
     }
     $cacheDir = $lines[0].Trim()
     $issue = Get-ResikPathSafetyIssue -Path $cacheDir
@@ -108,9 +143,10 @@ function Invoke-ResikPipDetection {
 }
 
 function Invoke-ResikPipAnalysis {
-    $python = Find-ResikPipPython
-    if ($null -eq $python) { throw 'No Python with pip was found.' }
-    $cacheDir = Get-ResikPipCacheDirectory -PythonPath $python.FilePath
+    $found = Find-ResikPipCache
+    if ($null -eq $found) { throw 'No Python with pip was found.' }
+    $python = $found.Python
+    $cacheDir = $found.CacheDir
     $size = Measure-ResikPathSet -Path @(Get-ResikPipCachePath -CacheDir $cacheDir)
     $details = "$cacheDir ($($size.Files) files, using $($python.Source))"
     if ($size.Unreadable -gt 0) { $details += "; $($size.Unreadable) folder(s) could not be read" }
@@ -118,9 +154,10 @@ function Invoke-ResikPipAnalysis {
 }
 
 function Invoke-ResikPipCleanup {
-    $python = Find-ResikPipPython
-    if ($null -eq $python) { throw 'No Python with pip was found.' }
-    $cacheDir = Get-ResikPipCacheDirectory -PythonPath $python.FilePath
+    $found = Find-ResikPipCache
+    if ($null -eq $found) { throw 'No Python with pip was found.' }
+    $python = $found.Python
+    $cacheDir = $found.CacheDir
     if (-not (Test-Path -LiteralPath $cacheDir -PathType Container)) {
         return [pscustomobject]@{ Status = 'Skipped'; Details = "No cache at $cacheDir; nothing to clean." }
     }

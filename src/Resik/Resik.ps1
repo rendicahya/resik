@@ -7,64 +7,16 @@
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
-# Explicit file list: only these files are loaded, in this order.
-. (Join-Path $PSScriptRoot 'Core\Models.ps1')
-. (Join-Path $PSScriptRoot 'Core\Arguments.ps1')
-. (Join-Path $PSScriptRoot 'Core\Selection.ps1')
-. (Join-Path $PSScriptRoot 'Core\Analysis.ps1')
-. (Join-Path $PSScriptRoot 'Core\NativeCommand.ps1')
-. (Join-Path $PSScriptRoot 'Core\FileSystem.ps1')
-. (Join-Path $PSScriptRoot 'Core\Cleanup.ps1')
-. (Join-Path $PSScriptRoot 'Core\Process.ps1')
-. (Join-Path $PSScriptRoot 'Core\Deletion.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\RecycleBin.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\ShaderCache.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\ThumbnailCache.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\Screenshots.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\WindowsUpdate.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\DeliveryOptimization.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\DiskCleanup.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\Defender.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\ErrorReports.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\Edge.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\InternetCache.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\TempFiles.ps1')
-. (Join-Path $PSScriptRoot 'WindowsCleanup\WindowsLogs.ps1')
-. (Join-Path $PSScriptRoot 'AppCleanup\AppCache.ps1')
-. (Join-Path $PSScriptRoot 'AppCleanup\Chromium.ps1')
-. (Join-Path $PSScriptRoot 'AppCleanup\Zotero.ps1')
-. (Join-Path $PSScriptRoot 'AppCleanup\Nvidia.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Uv.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Pip.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Poetry.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Npm.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Pnpm.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Yarn.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Composer.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Go.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Bun.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\NodeGyp.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\NetBeans.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Deno.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Dart.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Scoop.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Chocolatey.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\NuGet.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Conda.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\HuggingFace.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\PyTorch.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Playwright.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Gradle.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\Maven.ps1')
-. (Join-Path $PSScriptRoot 'DeveloperCleanup\JetBrains.ps1')
-. (Join-Path $PSScriptRoot 'Core\Catalog.ps1')
-. (Join-Path $PSScriptRoot 'Core\Cli.ps1')
-. (Join-Path $PSScriptRoot 'Reporting\ConsoleReport.ps1')
-. (Join-Path $PSScriptRoot 'UI\TargetPicker.ps1')
-. (Join-Path $PSScriptRoot 'UI\Spinner.ps1')
+# Only the files listed in Core\SourceFiles.ps1 are loaded, in that order.
+. (Join-Path $PSScriptRoot 'Core\SourceFiles.ps1')
+foreach ($resikSourceFile in Get-ResikSourceFile) {
+    . (Join-Path $PSScriptRoot $resikSourceFile)
+}
 
 try {
-    $exitCode = Invoke-ResikCli -Arguments $args -Targets @(Get-ResikTargetCatalog)
+    # The targets come from the catalog, so background workers can build the
+    # same targets and analyze some of them in parallel.
+    $exitCode = Invoke-ResikCli -Arguments $args -Targets @(Get-ResikTargetCatalog) -ParallelAnalysis
 }
 catch {
     Write-ResikError "Unexpected error: $($_.Exception.Message)"

@@ -25,10 +25,22 @@ function Resolve-ResikExecutable {
         [string] $Extension = '.exe'
     )
 
-    $commands = @(Get-Command -Name "$Name$Extension" -CommandType Application -ErrorAction SilentlyContinue)
-    foreach ($command in $commands) {
-        if ($command.Path -and [System.IO.Path]::IsPathRooted($command.Path)) {
-            return $command.Path
+    # PATH is searched directly: Get-Command takes about 75 ms to report a
+    # missing command, and most targets look up tools that are not installed.
+    # Like Get-Command, only rooted folders count, in PATH order, and the
+    # current folder is never searched.
+    $fileName = $Name + $Extension
+    foreach ($entry in ([string]$env:PATH).Split([IO.Path]::PathSeparator)) {
+        $folder = [Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"'))
+        if (-not $folder) { continue }
+        try {
+            if (-not [IO.Path]::IsPathRooted($folder)) { continue }
+            $candidate = [IO.Path]::Combine($folder, $fileName)
+            if ([IO.File]::Exists($candidate)) { return [IO.Path]::GetFullPath($candidate) }
+        }
+        catch [ArgumentException] {
+            # A PATH entry with characters that are invalid in a path.
+            continue
         }
     }
     $null

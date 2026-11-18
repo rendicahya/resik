@@ -533,7 +533,9 @@ src/Resik/
     Cli.ps1               version, help text, orchestration, exit codes
     Models.ps1            target and result models
     Selection.ps1         --all / --only target selection
-    Analysis.ps1          non-destructive analysis with per-target isolation
+    SourceFiles.ps1       the list of source files, in load order
+    Analysis.ps1          non-destructive analysis with per-target isolation,
+                          run in parallel by background workers
     NativeCommand.ps1     runs external tools with captured output and timeouts
     FileSystem.ps1        path safety checks, size and free-space measurement
     Cleanup.ps1           cleanup with per-target isolation

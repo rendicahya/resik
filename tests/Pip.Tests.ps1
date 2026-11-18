@@ -63,12 +63,53 @@ Describe 'Find-ResikPipPython' {
     }
 }
 
+Describe 'Find-ResikPipCache' {
+    BeforeEach {
+        $script:cacheDir = Join-Path $TestDrive 'pip-cache'
+        Mock Get-ResikPipPythonCandidate {
+            [pscustomobject]@{ FilePath = 'C:\NoPip\python.exe'; Source = 'python on PATH' }
+            [pscustomobject]@{ FilePath = 'C:\Good\python.exe'; Source = 'py launcher' }
+        }
+        Mock Invoke-ResikNativeCommand { New-TestRunResult -Status NonZeroExit -Message 'python.exe exited with code 1.' } -ParameterFilter {
+            $FilePath -eq 'C:\NoPip\python.exe'
+        }
+        Mock Invoke-ResikNativeCommand { New-TestRunResult -StdOut "$script:cacheDir`r`n" } -ParameterFilter {
+            $FilePath -eq 'C:\Good\python.exe' -and $ArgumentList -contains 'cache'
+        }
+        Mock Invoke-ResikNativeCommand { New-TestRunResult } -ParameterFilter {
+            $FilePath -eq 'C:\Good\python.exe' -and $ArgumentList -contains '--version'
+        }
+    }
+
+    It 'skips an interpreter without pip and starts Python only once for one that works' {
+        $found = Find-ResikPipCache
+
+        $found.Python.FilePath | Should -BeExactly 'C:\Good\python.exe'
+        $found.CacheDir | Should -BeExactly $script:cacheDir
+        Should -Invoke Invoke-ResikNativeCommand -Times 1 -Exactly -ParameterFilter { $FilePath -eq 'C:\Good\python.exe' }
+    }
+
+    It 'reports a failing "pip cache dir" when that interpreter has pip' {
+        Mock Invoke-ResikNativeCommand { New-TestRunResult -Status NonZeroExit -Message 'python.exe exited with code 1.' -StdErr 'ERROR: cache is disabled' } -ParameterFilter {
+            $FilePath -eq 'C:\Good\python.exe' -and $ArgumentList -contains 'cache'
+        }
+
+        { Find-ResikPipCache } | Should -Throw 'python.exe exited with code 1. ERROR: cache is disabled'
+    }
+
+    It 'returns $null when nothing has pip' {
+        Mock Get-ResikPipPythonCandidate { [pscustomobject]@{ FilePath = 'C:\NoPip\python.exe'; Source = 'python on PATH' } }
+        Find-ResikPipCache | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'pip target' {
     BeforeEach {
         $script:cacheDir = Join-Path $TestDrive ('pip-' + [guid]::NewGuid().ToString('N'))
         $script:cleanArgs = $null
         Mock Write-Host {}
         Mock Find-ResikPipPython { [pscustomobject]@{ FilePath = 'C:\fake\python.exe'; Source = 'python on PATH' } }
+        Mock Get-ResikPipPythonCandidate { [pscustomobject]@{ FilePath = 'C:\fake\python.exe'; Source = 'python on PATH' } }
         Mock Invoke-ResikNativeCommand { New-TestRunResult -StdOut "$script:cacheDir`r`n" } -ParameterFilter {
             ($ArgumentList -join ' ') -like '-m pip cache dir*'
         }
