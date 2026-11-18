@@ -288,7 +288,9 @@ function Format-ResikSummary {
 }
 
 function Format-ResikCleanupPlan {
-    # Describes what is about to be cleaned, shown before confirmation.
+    # Lists what is about to be cleaned, shown before confirmation: one row per
+    # target (ID, estimate, risk, name). The analysis report above it already
+    # gave the details, so only High-risk targets repeat their description.
     [CmdletBinding()]
     [OutputType([string])]
     param(
@@ -303,29 +305,32 @@ function Format-ResikCleanupPlan {
 
     $total = [long]0
     $unmeasured = 0
-    $blocks = foreach ($target in $Targets) {
-        $analysis = $AnalysisResults | Where-Object { $_.TargetId -eq $target.Id } | Select-Object -First 1
-        $bytes = if ($null -ne $analysis) { $analysis.EstimatedBytes } else { $null }
-        if ($null -eq $bytes) { $unmeasured++ } else { $total += $bytes }
-        $size = if ($null -eq $bytes) { 'size unknown' } else { Format-ResikSize $bytes }
-        [pscustomobject]@{
-            Heading     = "  $($target.Name) ($($target.Id)) - $size, $($target.RiskLevel) risk"
-            Location    = $(if ($null -ne $analysis) { ConvertTo-ResikDisplayText $analysis.Message } else { '' })
-            Description = $target.Description
-        }
-    }
+    $rows = @(foreach ($target in $Targets) {
+            $analysis = $AnalysisResults | Where-Object { $_.TargetId -eq $target.Id } | Select-Object -First 1
+            $bytes = if ($null -ne $analysis) { $analysis.EstimatedBytes } else { $null }
+            if ($null -eq $bytes) { $unmeasured++ } else { $total += $bytes }
+            [pscustomobject]@{
+                Id     = "$($target.Id)"
+                Size   = $(if ($null -eq $bytes) { '?' } else { Format-ResikSize $bytes })
+                Risk   = "$($target.RiskLevel)"
+                Name   = "$($target.Name)"
+                Detail = $(if ($target.RiskLevel -eq 'High') { "$($target.Description)" } else { '' })
+            }
+        })
 
     $about = "about $(Format-ResikSize $total)"
     if ($unmeasured -gt 0) { $about += ", plus $(Format-ResikCount $unmeasured) of unknown size" }
     "Resik will clean $(Format-ResikCount $Targets.Count) ($about):"
-    foreach ($block in @($blocks)) {
-        ''
-        $block.Heading
-        Split-ResikText $block.Location -Width ($Width - 1) -Indent '    '
-        Split-ResikText $block.Description -Width ($Width - 1) -Indent '    '
+    $idWidth = ($rows | ForEach-Object { $_.Id.Length } | Measure-Object -Maximum).Maximum
+    $sizeWidth = ($rows | ForEach-Object { $_.Size.Length } | Measure-Object -Maximum).Maximum
+    $riskWidth = ($rows | ForEach-Object { $_.Risk.Length } | Measure-Object -Maximum).Maximum
+    foreach ($row in $rows) {
+        $line = '  {0}  {1}  {2}  {3}' -f $row.Id.PadRight($idWidth), $row.Size.PadLeft($sizeWidth), $row.Risk.PadRight($riskWidth), $row.Name
+        if ($Width -gt 4 -and $line.Length -gt $Width - 1) { $line = $line.Substring(0, $Width - 4) + '...' }
+        $line.TrimEnd()
+        if ($row.Detail) { Split-ResikText $row.Detail -Width ($Width - 1) -Indent '      ' }
     }
 }
-
 function Test-ResikRoutineDetail {
     # True for cleanup details that only repeat what Resik printed while
     # cleaning (the command it ran, the folder it emptied), so the report can

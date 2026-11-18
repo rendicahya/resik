@@ -45,7 +45,7 @@ function New-ResikTarget {
         [string] $Name,
 
         [Parameter(Mandatory)]
-        [ValidateSet('Windows', 'Developer', IgnoreCase = $false)]
+        [ValidateSet('Windows', 'Apps', 'Developer', IgnoreCase = $false)]
         [string] $Category,
 
         [Parameter(Mandatory)]

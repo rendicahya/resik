@@ -21,7 +21,12 @@ Describe 'jetbrains-leftovers target' {
         Mock Get-ResikJetBrainsSystemRoot { $script:system }
         Mock Get-ResikJetBrainsConfigRoot { $script:config }
         Mock Get-ResikJetBrainsRunningIde { }
+        # Stopping the IDEs removes the running ones.
+        Mock Test-ResikAppRunning { @(Get-ResikJetBrainsRunningIde).Count -gt 0 }
+        Mock Stop-ResikAppProcess { $script:ideStopped = $true }
+        $script:ideStopped = $false
         Mock Read-ResikConfirmation {
+            if ($Prompt -like 'JetBrains IDE (*') { return $true }
             foreach ($name in $script:answers.Keys) {
                 if ($Prompt -like "*of $name (*") { return $script:answers[$name] }
             }
@@ -53,7 +58,7 @@ Describe 'jetbrains-leftovers target' {
 
     It 'says to close a running IDE' {
         Mock Get-ResikJetBrainsRunningIde { 'pycharm64' }
-        (Invoke-ResikTargetAnalysis -Target (New-ResikJetBrainsLeftoverTarget)).Message | Should -BeLike '*. Close pycharm64 before cleaning'
+        (Invoke-ResikTargetAnalysis -Target (New-ResikJetBrainsLeftoverTarget)).Message | Should -BeLike '*. pycharm64 is running; Resik will ask to close it before cleaning'
     }
 
     It 'ignores a version folder that is a junction' {
@@ -89,15 +94,17 @@ Describe 'jetbrains-leftovers target' {
         Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'Deleting all data of Rider2024.1 *' }
     }
 
-    It 'still refuses while an IDE is running after "yes to all"' {
+    It 'asks to close a running IDE even after "yes to all", and keeps everything when declined' {
         Mock Get-ResikJetBrainsRunningIde { 'rider64' }
+        Mock Read-ResikConfirmation { $false } -ParameterFilter { $Prompt -like 'JetBrains IDE (rider64) is running*' }
 
         $result = Invoke-ResikTargetCleanup -Target (New-ResikJetBrainsLeftoverTarget) -CanPrompt $true -AcceptAll $true
 
         $result.Status | Should -BeExactly 'Skipped'
-        Join-Path $script:config 'Rider2024.1\options\ide.xml' | Should -Exist
+        $result.Message | Should -BeExactly 'You kept JetBrains IDE (rider64) open. Nothing was removed.'
+        Should -Invoke Stop-ResikAppProcess -Times 0 -Exactly
+        Join-Path $script:system 'PyCharmEdu2021.3\index\stubs.dat' | Should -Exist
     }
-
     It 'keeps a version the user declines' {
         $script:answers['Rider2024.1'] = $false
 
@@ -117,17 +124,37 @@ Describe 'jetbrains-leftovers target' {
         Join-Path $script:system 'PyCharmEdu2021.3\index\stubs.dat' | Should -Exist
     }
 
-    It 'removes nothing and asks nothing while an IDE is running' {
+    It 'removes nothing and asks nothing more while an IDE is running without a terminal' {
         Mock Get-ResikJetBrainsRunningIde { 'idea64' }
 
-        $result = Invoke-ResikTargetCleanup -Target (New-ResikJetBrainsLeftoverTarget) -CanPrompt $true
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikJetBrainsLeftoverTarget)
 
         $result.Status | Should -BeExactly 'Skipped'
-        $result.Message | Should -BeLike 'A JetBrains IDE is running (idea64).*'
         Should -Invoke Read-ResikConfirmation -Times 0
+        Should -Invoke Stop-ResikAppProcess -Times 0 -Exactly
         Join-Path $script:system 'PyCharmEdu2021.3\index\stubs.dat' | Should -Exist
     }
 
+    It 'closes a running IDE after asking, then asks about each version' {
+        Mock Get-ResikJetBrainsRunningIde { if (-not $script:ideStopped) { 'idea64' } }
+
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikJetBrainsLeftoverTarget) -CanPrompt $true
+
+        Should -Invoke Stop-ResikAppProcess -Times 1 -Exactly -ParameterFilter { $App.ProcessName -contains 'idea64' }
+        Should -Invoke Read-ResikConfirmation -ParameterFilter { $Prompt -like 'Delete all data of *' }
+        $result.Status | Should -Not -BeExactly 'Skipped'
+    }
+
+    It 'removes nothing when the IDE keeps running after closing' {
+        Mock Get-ResikJetBrainsRunningIde { 'idea64' }
+        Mock Stop-ResikAppProcess {}
+        Mock Test-ResikAppRunning { $false }
+
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikJetBrainsLeftoverTarget) -CanPrompt $true
+
+        $result.Message | Should -BeLike 'A JetBrains IDE is still running (idea64).*'
+        Join-Path $script:system 'PyCharmEdu2021.3\index\stubs.dat' | Should -Exist
+    }
     It 'keeps a version when an IDE is started while asking' {
         $script:started = $false
         Mock Read-ResikConfirmation { $script:started = $true; $true }

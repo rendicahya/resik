@@ -97,7 +97,7 @@ resik --version
 | `-h`, `--help` | Show usage and supported options. |
 | `-v`, `--version` | Show the Resik version. |
 | `-n`, `--dry-run` | Analyze targets without changing anything. With the picker, pick what to analyze. |
-| `-a`, `--all` | Select all targets except `recycle-bin`, `screenshots`, `edge-profile`, `scoop-persist`, and `jetbrains-leftovers`, without the picker. |
+| `-a`, `--all` | Select all targets except `recycle-bin`, `screenshots`, `edge-profile`, the `*-service-workers` browser parts, `scoop-persist`, and `jetbrains-leftovers`, without the picker. |
 | `-o`, `--only <ids>` | Select specific target IDs (comma-separated), without the picker. |
 | `--non-interactive` | Never prompt. Requires `--all` or `--only`, and `--force` to clean. |
 | `--report-path <path>` | Write a JSON report. Not implemented yet; rejected with an error. |
@@ -148,9 +148,10 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
 | `windows-update` | Component-store copies of updates that newer updates replaced | `Dism.exe /Online /Cleanup-Image /StartComponentCleanup` | Medium |
 | `windows-logs` | Rotated CBS logs, and DISM and Windows Update logs older than 7 days, in `%WINDIR%\Logs` | Resik deletes the old logs | Low |
 | `delivery-optimization` | Windows Update, Microsoft Store, and Office downloads kept to share with other PCs | `Delete-DeliveryOptimizationCache -Force` | Low |
-| `edge-cache` | Microsoft Edge's cached web files and GPU shader caches, in every profile | Resik deletes the folders' contents | Low |
+| `edge-cache`, `edge-code-cache`, `edge-gpu-cache`, `edge-service-workers` | Parts of Microsoft Edge's caches, chosen separately (see [Browsers and apps](#browsers-and-apps)) | Resik deletes the folders' contents | Low; service workers Medium |
 | `edge-profile` | All Microsoft Edge data: history, cookies, saved passwords, extensions, settings | Resik deletes `User Data` after you confirm | High |
 | `ie-cache` | Internet Explorer's temporary internet files (`INetCache\IE`) | Resik deletes the cached files | Low |
+| `nvidia-shaders` | Shaders the NVIDIA driver compiled (`DXCache`, `GLCache` in `%LOCALAPPDATA%\NVIDIA` and `AppData\LocalLow\NVIDIA`) | Resik deletes the folders' contents | Low |
 
 - **recycle-bin:** the deleted files cannot be restored afterwards, so `--all`
   and "select all" in the picker never choose it; name it with
@@ -161,8 +162,14 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
   followed, and files in use (by a running game, or by File Explorer, which
   keeps some thumbnail files open) are skipped and reported. Windows rebuilds
   both caches: games may stutter the first time, and folders show thumbnails
-  again as you browse. The icon cache and driver shader caches (NVIDIA, AMD)
-  are not touched.
+  again as you browse. The icon cache is not touched. File Explorer usually
+  keeps every thumbnail file open, so `thumbnails` often removes little or
+  nothing until you sign out and back in.
+- **nvidia-shaders:** the driver has no command for this, so Resik empties the
+  folders itself. Files a running game or app has open are skipped and
+  reported; Resik does not close anything for this target, because any program
+  using the GPU can hold them. Games may stutter briefly while shaders are
+  compiled again.
 - **temp-files:** like Disk Cleanup's "Temporary files", only files that were
   both created and last changed more than 7 days ago are deleted, so running
   apps and installers keep what they are using; files in use are skipped and
@@ -198,29 +205,67 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
   progress is not interrupted. Windows downloads the files again if it needs
   them; until then, other PCs on your network cannot get them from yours.
   `C:\Windows\SoftwareDistribution\Download` and `Windows.old` are not touched.
-- **edge-cache, edge-profile:** Edge has no command for clearing its data, so
-  Resik deletes files itself, only in `%LOCALAPPDATA%\Microsoft\Edge\User Data`
-  (Edge stable; Beta, Dev, and Canary are not touched). Both are refused while
-  `msedge.exe` runs; Startup boost can keep Edge running with no window, so
-  turn it off in Edge's settings or end Edge in Task Manager first.
-  `edge-cache` empties `Cache`, `Code Cache`, `GPUCache`, and the Dawn shader
-  caches of each profile, plus the shared `ShaderCache`, `GrShaderCache`,
-  `GraphiteDawnCache`, and `GPUPersistentCache`. History, cookies, passwords,
-  site data, extensions, and settings are kept.
-- **edge-profile:** for people who don't use Edge. It deletes the whole
+- **edge-profile:** for people who don't use Edge. Edge has no command for
+  clearing its data, so Resik deletes files itself, only in
+  `%LOCALAPPDATA%\Microsoft\Edge\User Data` (Edge stable; Beta, Dev, and Canary
+  are not touched). It deletes the whole
   `User Data` folder, so Edge starts as if newly installed; only what Edge sync
   stored in a Microsoft account comes back. It cannot be recovered, so
   `--all` and "select all" never choose it, and Resik asks before deleting,
   even with `--force` (unless you answered `a`); without a terminal nothing is
-  removed. Edge itself stays installed, and WebView2, which Windows and other
-  apps use, keeps its data elsewhere and is not affected. Its size includes
-  `edge-cache`'s, so the total counts that part twice if you pick both.
+  removed. Edge keeps these files open, so while Edge runs (Startup boost can
+  keep it running with no window) Resik then asks whether to close it. Edge
+  itself stays installed, and WebView2, which Windows and other apps use, keeps
+  its data elsewhere and is not affected. Its size includes the Edge cache
+  parts', so the total counts them twice if you pick them too.
 - **ie-cache:** Internet Explorer is retired, but apps that download through
   its WinINet library still use this cache. Microsoft documents no command to
   clear it, so Resik empties the cache folders (the 8-character folders in
   `INetCache\IE` and `INetCache\Low\IE`) and keeps the folders and
   `container.dat`. Cookies and history are kept, so apps stay signed in, and
   Office's `Content.MSO` and `Content.Word` folders are not touched.
+
+#### Browsers and apps
+
+Chromium-based browsers are split into parts, so you can pick only what you
+want. Each `<browser>` below is `edge` (listed with Windows above), `chrome`,
+`brave`, or `comet`:
+
+| ID | What it cleans (in every profile) | Risk |
+| --- | --- | --- |
+| `<browser>-cache` | Cached web pages, images, and scripts (`Cache`), like "Cached images and files" in the browser's settings | Low |
+| `<browser>-code-cache` | Compiled JavaScript and WebAssembly (`Code Cache`) | Low |
+| `<browser>-gpu-cache` | Compiled GPU shaders (`GPUCache`, the Dawn caches, and the shared `ShaderCache`, `GrShaderCache`, `GraphiteDawnCache`, `GPUPersistentCache`) | Low |
+| `<browser>-service-workers` | Service worker data (`Service Worker`): offline copies of web apps and the service workers sites installed | Medium |
+
+Apps built on the same engine have one target each:
+
+| ID | What it cleans | Risk |
+| --- | --- | --- |
+| `claude-desktop-cache` | The Claude desktop app's cached web files, compiled scripts, and GPU caches (`%APPDATA%\Claude`) | Low |
+| `clickup-cache` | The same caches of ClickUp (`%APPDATA%\ClickUp`) | Low |
+| `vscode-cache` | The same caches of Visual Studio Code, plus `CachedData` and the downloaded extension installers in `CachedExtensionVSIXs` (`%APPDATA%\Code`) | Low |
+| `play-games-cache` | The same caches of Google Play Games (`%LOCALAPPDATA%\Google\Play Games\CEF\cache`) | Low |
+| `zotero-cache` | Zotero's web and startup caches (`cache2`, `startupCache` in `%LOCALAPPDATA%\Zotero\Zotero\Profiles`) | Low |
+
+- None of these apps has a command for clearing its cache, so Resik empties
+  the folders itself (the folders are kept). Links are not followed, and a
+  browser profile is only a folder with a `Preferences` file.
+- History, cookies, saved passwords, site storage (IndexedDB, Local Storage),
+  extensions, settings, sign-ins, and app data are never touched. The caches
+  are rebuilt or downloaded again, so pages and apps load a little slower at
+  first.
+- **Closing the app:** a running browser or app keeps these files open, so
+  Resik asks whether to close it first, even after you answered `a` (`--force`
+  never answers it; without a terminal the target is skipped). Open tabs are
+  closed without asking; browsers offer to restore them. Resik finds a running
+  Chromium browser by its locked `User Data\lockfile`, wherever it is
+  installed, and matches process names by path where they are ambiguous, so
+  Playwright's `chrome.exe` and the Claude Code CLI's `claude.exe` are never
+  closed.
+- **service workers:** more than a cache, so `--all` and "select all" never
+  choose them. Sites install their service workers again when you visit them;
+  until then, offline use and push notifications from those sites stop.
 
 #### Developer tools
 
@@ -240,6 +285,8 @@ folders (or folders containing them), or symbolic links and junctions.
 | `pnpm` | Packages in the pnpm store that no project uses | `pnpm store prune` | Low |
 | `yarn` | The global Yarn Classic (1.x) cache | `yarn cache clean` | Low |
 | `bun` | Bun's global package cache | `bun pm cache rm` | Low |
+| `node-gyp` | Node.js headers node-gyp downloaded to build native modules | Resik deletes the version folders, like `node-gyp remove` | Low |
+| `netbeans-cache` | NetBeans' cache folders (`%LOCALAPPDATA%\NetBeans\Cache`, one per version) | Resik deletes the version folders | Low |
 | `deno` | Deno's cache folder (`DENO_DIR`) | `deno clean` | Medium |
 | `composer` | Composer's cache (packages, repository metadata, VCS clones) | `composer global clear-cache --no-interaction` | Low |
 | `go-build` | The Go build cache (`GOCACHE`) | `go clean -cache` | Low |
@@ -295,6 +342,15 @@ What these remove is downloaded again when needed. Details:
   while offline; hence Medium risk. `GOCACHE=off` is skipped.
 - **bun:** the folder comes from `bun pm cache`. Projects and their
   `node_modules` folders are kept.
+- **node-gyp:** node-gyp is usually bundled inside npm rather than on `PATH`,
+  so Resik deletes the same folders `node-gyp remove <version>` would: only
+  folders named like a version in `%LOCALAPPDATA%\node-gyp\Cache` (or in
+  `npm_config_devdir` when it is set). node-gyp downloads them again the next
+  time a native module is built.
+- **netbeans-cache:** NetBeans rebuilds the cache, scanning your projects
+  again, on its next start. Settings in `%APPDATA%\NetBeans` are kept. If
+  NetBeans is running, Resik asks to close it (and the Java process it runs
+  in) first.
 - **deno:** the folder comes from `deno info --json`. `deno clean` removes all
   of `DENO_DIR`: downloaded modules and npm packages, compiled TypeScript,
   and the localStorage data that Deno scripts saved; hence Medium risk. Scripts
@@ -399,8 +455,9 @@ the IDE leaves both behind:
   version is still installed, because portable and Toolbox installs leave no
   record, so check the name before you answer `y`. Help \| Delete Leftover IDE
   Directories in a newer IDE does the same for old versions.
-- Resik refuses to delete anything while a JetBrains IDE is running, and checks
-  again after each answer.
+- While a JetBrains IDE is running, Resik asks whether to close it first
+  (unsaved changes in it may be lost) and deletes nothing if you say no. It
+  checks again after each answer.
 - Everything for that version goes, including its settings and Local History
   (the IDE's record of your past edits). Other folders in `JetBrains`, such as
   Toolbox's, are not touched.
@@ -454,13 +511,19 @@ src/Resik/
     FileSystem.ps1        path safety checks, size and free-space measurement
     Cleanup.ps1           cleanup with per-target isolation
     Deletion.ps1          link-safe deletion (leftover data and Windows caches)
+    Process.ps1           asks to close a running app before deleting its files
     Catalog.ps1           registered cleanup targets
   WindowsCleanup/         RecycleBin, ShaderCache, ThumbnailCache, Screenshots,
                           TempFiles, WindowsUpdate, WindowsLogs,
-                          DeliveryOptimization, Edge, InternetCache
+                          DeliveryOptimization, Edge (edge-profile),
+                          InternetCache
+  AppCleanup/             AppCache (shared app cache helpers), Chromium
+                          (browser parts and Electron/CEF apps), Zotero,
+                          Nvidia
   DeveloperCleanup/       one file per tool: Uv, Pip, Poetry, Conda,
                           HuggingFace, PyTorch (torch-inductor, triton),
-                          Npm, Pnpm, Yarn, Bun, Deno, Composer, Go, Dart,
+                          Npm, Pnpm, Yarn, Bun, NodeGyp, Deno, Composer, Go,
+                          Dart, NetBeans,
                           Playwright, Scoop,
                           Chocolatey, NuGet, JetBrains (the analysis-only
                           jetbrains and jetbrains-leftovers), and the

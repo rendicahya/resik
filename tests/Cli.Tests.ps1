@@ -295,7 +295,7 @@ Describe 'Invoke-ResikCli cleanup' {
     It 'shows the plan before asking' {
         Invoke-ResikCli -Arguments @('--all') -Targets @(New-CleanableTarget) | Should -Be 0
         Should -Invoke Write-Host -ParameterFilter { "$Object" -like 'Resik will clean*' }
-        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '*Test target*' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -eq '  fake  1.0 KB  Low  Fake fake' }
     }
 
     It 'cleans nothing when the user declines' {

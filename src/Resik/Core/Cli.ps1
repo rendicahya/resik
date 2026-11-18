@@ -50,10 +50,11 @@ input is redirected, cleanup requires --force.
 
 recycle-bin, screenshots, edge-profile, scoop-persist, and jetbrains-leftovers
 delete files that cannot be recovered and are never chosen by --all or by
-"select all". edge-profile, scoop-persist, and jetbrains-leftovers ask before
-deleting, even with --force (unless you answered a), and remove nothing
-without a terminal. edge-cache and edge-profile are refused while Microsoft
-Edge is running.
+"select all"; neither are the *-service-workers browser parts. edge-profile,
+scoop-persist, and jetbrains-leftovers ask before deleting, even with --force
+(unless you answered a), and remove nothing without a terminal.
+Browser, app, and IDE targets ask to close the browser or app when it is
+running, even after a; without a terminal they are skipped.
 windows-update and windows-logs need administrator rights, and temp-files
 includes %WINDIR%\Temp only with them; Resik never elevates itself.
 "@
@@ -344,7 +345,7 @@ function Invoke-ResikCleanupStep {
             Write-ResikError 'Cleanup needs confirmation. Add --force to confirm without a prompt, or use --dry-run.'
             return 2
         }
-        $answer = Read-ResikCleanupAnswer -Prompt 'Clean these targets? [y = yes, a = yes to all, N = no]'
+        $answer = Read-ResikCleanupAnswer -Prompt 'Clean these targets? [y/N, a = yes to all]'
         if ($answer -eq 'No') {
             Write-Host 'Cancelled. Nothing was changed.'
             return 0

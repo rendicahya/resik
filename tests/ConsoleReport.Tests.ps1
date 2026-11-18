@@ -160,19 +160,29 @@ Describe 'Format-ResikSummary' {
 }
 
 Describe 'Format-ResikCleanupPlan' {
-    It 'lists each target with its estimate, location, and description' {
-        $target = New-TestTarget -Id 'a'
-        $analysis = New-ResikResult -TargetId 'a' -Operation Analyze -Status AnalysisOnly -EstimatedBytes 2048 -Message 'C:\cache'
+    It 'lists one aligned row per target' {
+        $targets = @((New-TestTarget -Id 'a'), (New-TestTarget -Id 'longer-id' -RiskLevel Medium))
+        $analysis = @(
+            (New-ResikResult -TargetId 'a' -Operation Analyze -Status AnalysisOnly -EstimatedBytes 2048 -Message 'C:\cache'),
+            (New-ResikResult -TargetId 'longer-id' -Operation Analyze -Status AnalysisOnly -EstimatedBytes 10485760)
+        )
+
+        $lines = @(Format-ResikCleanupPlan -Targets $targets -AnalysisResults $analysis)
+
+        $lines | Should -Be @(
+            'Resik will clean 2 targets (about 10.0 MB):'
+            '  a           2.0 KB  Low     Fake a'
+            '  longer-id  10.0 MB  Medium  Fake longer-id'
+        )
+    }
+
+    It 'repeats the description of High-risk targets only' {
+        $target = New-TestTarget -Id 'bin' -RiskLevel High
+        $analysis = New-ResikResult -TargetId 'bin' -Operation Analyze -Status AnalysisOnly -EstimatedBytes 1024
 
         $lines = @(Format-ResikCleanupPlan -Targets @($target) -AnalysisResults @($analysis))
 
-        $lines | Should -Be @(
-            'Resik will clean 1 target (about 2.0 KB):'
-            ''
-            '  Fake a (a) - 2.0 KB, Low risk'
-            '    C:\cache'
-            '    Test target'
-        )
+        $lines | Should -Be @('Resik will clean 1 target (about 1.0 KB):', '  bin  1.0 KB  High  Fake bin', '      Test target')
     }
 
     It 'counts targets of unknown size separately' {
@@ -185,10 +195,16 @@ Describe 'Format-ResikCleanupPlan' {
         $lines = @(Format-ResikCleanupPlan -Targets $targets -AnalysisResults $analysis)
 
         $lines[0] | Should -BeExactly 'Resik will clean 2 targets (about 1.0 KB, plus 1 target of unknown size):'
-        $lines | Should -Contain '  Fake b (b) - size unknown, Low risk'
+        $lines | Should -Contain '  b       ?  Low  Fake b'
+    }
+
+    It 'shortens rows to the window width' {
+        $target = New-TestTarget -Id 'a'
+        $analysis = New-ResikResult -TargetId 'a' -Operation Analyze -Status AnalysisOnly -EstimatedBytes 1
+        $lines = @(Format-ResikCleanupPlan -Targets @($target) -AnalysisResults @($analysis) -Width 18)
+        $lines[1] | Should -BeExactly '  a  1 B  Low ...'
     }
 }
-
 Describe 'Format-ResikCleanupSummary' {
     It 'groups results, sorts cleaned targets by what was removed, and hides routine details' {
         $targets = @('a', 'big', 'unsized', 'part', 'b', 'off') | ForEach-Object { New-TestTarget -Id $_ }

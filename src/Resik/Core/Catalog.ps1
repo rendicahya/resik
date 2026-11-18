@@ -16,9 +16,15 @@ function Get-ResikTargetCatalog {
     New-ResikWindowsUpdateTarget
     New-ResikWindowsLogTarget
     New-ResikDeliveryOptimizationTarget
-    New-ResikEdgeCacheTarget
+    New-ResikChromiumBrowserTarget -BrowserId 'edge'
     New-ResikEdgeProfileTarget
     New-ResikInternetCacheTarget
+    New-ResikNvidiaShaderTarget
+    New-ResikChromiumBrowserTarget -BrowserId 'chrome'
+    New-ResikChromiumBrowserTarget -BrowserId 'brave'
+    New-ResikChromiumBrowserTarget -BrowserId 'comet'
+    foreach ($app in Get-ResikChromiumAppId) { New-ResikChromiumTarget -SpecId $app }
+    New-ResikZoteroTarget
     New-ResikUvTarget
     New-ResikPipTarget
     New-ResikPoetryTarget
@@ -30,6 +36,7 @@ function Get-ResikTargetCatalog {
     New-ResikPnpmTarget
     New-ResikYarnTarget
     New-ResikBunTarget
+    New-ResikNodeGypTarget
     New-ResikDenoTarget
     New-ResikComposerTarget
     New-ResikGoBuildTarget
@@ -42,6 +49,7 @@ function Get-ResikTargetCatalog {
     New-ResikChocolateyTarget
     New-ResikNuGetTarget
     New-ResikJetBrainsLeftoverTarget
+    New-ResikNetBeansTarget
     # Analysis only: these report sizes and are never cleaned.
     New-ResikGradleTarget
     New-ResikMavenTarget

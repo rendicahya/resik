@@ -39,69 +39,32 @@ Describe 'edge targets' {
 
         Mock Write-Host {}
         Mock Get-ResikLocalAppDataPath { $script:local }
-        Mock Test-ResikEdgeRunning { $false }
+        # Edge runs while $script:edgeOpen is true; stopping it closes it.
+        $script:edgeOpen = $false
+        Mock Test-ResikAppRunning { $script:edgeOpen }
+        Mock Stop-ResikAppProcess { $script:edgeOpen = $false }
         Mock Read-ResikConfirmation { $true }
     }
 
-    It 'registers edge-cache as Low risk and edge-profile as High risk and explicit-only' {
+    It 'registers edge-profile as High risk and explicit-only, and the cache parts as Edge targets' {
         $catalog = @(Get-ResikTargetCatalog)
-        $cache = $catalog | Where-Object Id -eq 'edge-cache'
         $reset = $catalog | Where-Object Id -eq 'edge-profile'
-        $cache.RiskLevel | Should -BeExactly 'Low'
-        $cache.ExplicitOnly | Should -BeFalse
         $reset.RiskLevel | Should -BeExactly 'High'
         $reset.ExplicitOnly | Should -BeTrue
+        foreach ($id in 'edge-cache', 'edge-code-cache', 'edge-gpu-cache', 'edge-service-workers') {
+            ($catalog | Where-Object Id -eq $id).Category | Should -BeExactly 'Windows'
+        }
     }
 
     It 'is not detected without Edge data' {
         Mock Get-ResikLocalAppDataPath { Join-Path $TestDrive 'no-edge' }
-        (Invoke-ResikTargetAnalysis -Target (New-ResikEdgeCacheTarget)).Message | Should -BeLike 'Not detected: *'
         (Invoke-ResikTargetAnalysis -Target (New-ResikEdgeProfileTarget)).Message | Should -BeLike 'Not detected: *'
     }
 
-    It 'measures only the cache folders of real profiles' {
-        $result = Invoke-ResikTargetAnalysis -Target (New-ResikEdgeCacheTarget)
-        $result.EstimatedBytes | Should -Be 1900
-        $result.Message | Should -BeLike '4 cache folder(s) in *'
-        Join-Path $script:userData 'Default\Cache\Cache_Data\data_1' | Should -Exist
+    It 'says it will ask to close Edge while it runs' {
+        $script:edgeOpen = $true
+        (Invoke-ResikTargetAnalysis -Target (New-ResikEdgeProfileTarget)).Message | Should -BeLike '*Microsoft Edge is running; Resik will ask to close it before cleaning'
     }
-
-    It 'says to close Edge while it runs' {
-        Mock Test-ResikEdgeRunning { $true }
-        (Invoke-ResikTargetAnalysis -Target (New-ResikEdgeCacheTarget)).Message | Should -BeLike '*Close Microsoft Edge before cleaning*'
-    }
-
-    It 'empties the cache folders and keeps everything else' {
-        $result = Invoke-ResikTargetCleanup -Target (New-ResikEdgeCacheTarget)
-
-        $result.Status | Should -BeExactly 'Success'
-        $result.MeasuredBytes | Should -Be 1900
-        Join-Path $script:userData 'Default\Cache' | Should -Exist
-        Join-Path $script:userData 'Default\Cache\Cache_Data' | Should -Not -Exist
-        Join-Path $script:userData 'Default\Code Cache\js' | Should -Not -Exist
-        Join-Path $script:userData 'Profile 1\GPUCache\data_0' | Should -Not -Exist
-        Join-Path $script:userData 'GrShaderCache\data_0' | Should -Not -Exist
-        foreach ($kept in 'Default\Preferences', 'Default\History', 'Default\Network\Cookies',
-            'Default\Service Worker\CacheStorage\x', 'Not a profile\Cache\x', 'Local State') {
-            Join-Path $script:userData $kept | Should -Exist
-        }
-    }
-
-    It 'does not follow a cache folder that is a junction' {
-        $elsewhere = Join-Path $TestDrive ('elsewhere-' + [guid]::NewGuid().ToString('N'))
-        New-TestFile -Path (Join-Path $elsewhere 'precious') -Size 9000
-        New-Item -ItemType Junction -Path (Join-Path $script:userData 'Default\DawnCache') -Value $elsewhere | Out-Null
-
-        (Invoke-ResikTargetCleanup -Target (New-ResikEdgeCacheTarget)).MeasuredBytes | Should -Be 1900
-        Join-Path $elsewhere 'precious' | Should -Exist
-    }
-
-    It 'refuses to clean the cache while Edge runs' {
-        Mock Test-ResikEdgeRunning { $true }
-        (Invoke-ResikTargetCleanup -Target (New-ResikEdgeCacheTarget)).Status | Should -BeExactly 'Skipped'
-        Join-Path $script:userData 'Default\Cache\Cache_Data\data_1' | Should -Exist
-    }
-
     It 'deletes the whole User Data folder after confirmation' {
         $result = Invoke-ResikTargetCleanup -Target (New-ResikEdgeProfileTarget) -CanPrompt $true
 
@@ -129,22 +92,35 @@ Describe 'edge targets' {
         Should -Invoke Read-ResikConfirmation -Times 0 -Exactly
     }
 
-    It 'refuses the reset while Edge runs, even after "accept all"' {
-        Mock Test-ResikEdgeRunning { $true }
-        (Invoke-ResikTargetCleanup -Target (New-ResikEdgeProfileTarget) -CanPrompt $true -AcceptAll $true).Status | Should -BeExactly 'Skipped'
+    It 'asks to delete first, then to close Edge, and resets it' {
+        $script:edgeOpen = $true
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikEdgeProfileTarget) -CanPrompt $true
+
+        $result.Status | Should -BeExactly 'Success'
+        $script:userData | Should -Not -Exist
+        Should -Invoke Read-ResikConfirmation -Times 2 -Exactly
+        Should -Invoke Stop-ResikAppProcess -Times 1 -Exactly
+    }
+
+    It 'does not close Edge when the reset is declined' {
+        $script:edgeOpen = $true
+        Mock Read-ResikConfirmation { $false }
+        (Invoke-ResikTargetCleanup -Target (New-ResikEdgeProfileTarget) -CanPrompt $true).Message | Should -BeExactly 'You kept the Microsoft Edge data. Nothing was removed.'
+        Should -Invoke Read-ResikConfirmation -Times 1 -Exactly
+        Should -Invoke Stop-ResikAppProcess -Times 0 -Exactly
         Join-Path $script:userData 'Default\History' | Should -Exist
     }
 
-    It 'refuses the reset when Edge was started during the question' {
-        $script:edgeChecks = 0
-        Mock Test-ResikEdgeRunning { $script:edgeChecks++; $script:edgeChecks -gt 1 }
-        $result = Invoke-ResikTargetCleanup -Target (New-ResikEdgeProfileTarget) -CanPrompt $true
+    It 'asks to close Edge after "accept all" and keeps the data when declined' {
+        $script:edgeOpen = $true
+        Mock Read-ResikConfirmation { $false } -ParameterFilter { $Prompt -like 'Microsoft Edge is running*' }
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikEdgeProfileTarget) -CanPrompt $true -AcceptAll $true
+
         $result.Status | Should -BeExactly 'Skipped'
-        $result.Message | Should -BeLike 'Microsoft Edge was started*'
+        $result.Message | Should -BeExactly 'You kept Microsoft Edge open. Nothing was removed.'
         Join-Path $script:userData 'Default\History' | Should -Exist
     }
 }
-
 Describe 'ie-cache target' {
     BeforeEach {
         $script:local = Join-Path $TestDrive ('local-' + [guid]::NewGuid().ToString('N'))

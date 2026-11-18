@@ -13,6 +13,7 @@ $resikSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'src\Resik'
 . (Join-Path $resikSource 'Core\NativeCommand.ps1')
 . (Join-Path $resikSource 'Core\FileSystem.ps1')
 . (Join-Path $resikSource 'Core\Cleanup.ps1')
+. (Join-Path $resikSource 'Core\Process.ps1')
 . (Join-Path $resikSource 'Core\Deletion.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\RecycleBin.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\ShaderCache.ps1')
@@ -24,6 +25,10 @@ $resikSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'src\Resik'
 . (Join-Path $resikSource 'WindowsCleanup\InternetCache.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\TempFiles.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\WindowsLogs.ps1')
+. (Join-Path $resikSource 'AppCleanup\AppCache.ps1')
+. (Join-Path $resikSource 'AppCleanup\Chromium.ps1')
+. (Join-Path $resikSource 'AppCleanup\Zotero.ps1')
+. (Join-Path $resikSource 'AppCleanup\Nvidia.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Uv.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Pip.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Poetry.ps1')
@@ -33,6 +38,8 @@ $resikSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'src\Resik'
 . (Join-Path $resikSource 'DeveloperCleanup\Composer.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Go.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Bun.ps1')
+. (Join-Path $resikSource 'DeveloperCleanup\NodeGyp.ps1')
+. (Join-Path $resikSource 'DeveloperCleanup\NetBeans.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Deno.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Dart.ps1')
 . (Join-Path $resikSource 'DeveloperCleanup\Scoop.ps1')
@@ -83,8 +90,9 @@ function New-TestTarget {
         [string] $Id = 'fake',
         [scriptblock] $Detect = { [pscustomobject]@{ Available = $true } },
         [scriptblock] $Analyze = { [pscustomobject]@{ EstimatedBytes = 1024; Details = 'fake cache' } },
-        [scriptblock] $Clean = $null
+        [scriptblock] $Clean = $null,
+        [string] $RiskLevel = 'Low'
     )
-    New-ResikTarget -Id $Id -Name "Fake $Id" -Category Developer -RiskLevel Low `
+    New-ResikTarget -Id $Id -Name "Fake $Id" -Category Developer -RiskLevel $RiskLevel `
         -Description 'Test target' -Detect $Detect -Analyze $Analyze -Clean $Clean
 }

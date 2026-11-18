@@ -234,7 +234,11 @@ function Invoke-ResikMeasuredFolderSetDeletion {
         [Parameter(Mandatory)]
         [string] $Label,
 
-        [string] $InUseHint = ''
+        [string] $InUseHint = '',
+
+        # Also delete each folder once it is empty (for folders the owning tool
+        # treats as "installed" while they exist, such as node-gyp's headers).
+        [switch] $RemoveFolder
     )
 
     foreach ($folder in $Path) {
@@ -253,6 +257,11 @@ function Invoke-ResikMeasuredFolderSetDeletion {
             try {
                 $deletion = Remove-ResikDirectoryContent -Path $folder -Confirm:$false
                 foreach ($line in @($deletion.Errors)) { $errors.Add($line) }
+                if ($RemoveFolder -and $deletion.Errors.Count -eq 0 -and
+                    @([System.IO.Directory]::EnumerateFileSystemEntries($folder)).Count -eq 0) {
+                    # Not recursive: an empty folder, or a link, is all it removes.
+                    [System.IO.Directory]::Delete($folder, $false)
+                }
             }
             catch {
                 $errors.Add($_.Exception.Message)

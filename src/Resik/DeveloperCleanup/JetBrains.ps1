@@ -18,7 +18,7 @@
 #                        Remove-ResikDirectoryTree. Resik cannot reliably tell
 #                        whether a version is installed (portable and Toolbox
 #                        installs leave no record), so it asks about every
-#                        version, and refuses while a JetBrains IDE is running.
+#                        version, and asks to close a running JetBrains IDE first.
 #                        This also deletes the version's settings and Local
 #                        History, so it is High risk and explicit only.
 #
@@ -176,7 +176,7 @@ function Invoke-ResikJetBrainsLeftoverAnalysis {
     $details = "$(@($versions).Count) IDE version(s), each with its settings, plugins, and Local History: $($parts -join ', ')"
     if ($unreadable -gt 0) { $details += "; $unreadable folder(s) could not be read" }
     $running = @(Get-ResikJetBrainsRunningIde)
-    if ($running.Count -gt 0) { $details += ". Close $($running -join ', ') before cleaning" }
+    if ($running.Count -gt 0) { $details += ". $($running -join ', ') is running; Resik will ask to close it before cleaning" }
     [pscustomobject]@{ EstimatedBytes = $total; Details = $details }
 }
 
@@ -199,9 +199,19 @@ function Invoke-ResikJetBrainsLeftoverCleanup {
     }
     $running = @(Get-ResikJetBrainsRunningIde)
     if ($running.Count -gt 0) {
-        return [pscustomobject]@{
-            Status  = 'Skipped'
-            Details = "A JetBrains IDE is running ($($running -join ', ')). Close it and run Resik again. Nothing was removed."
+        # Asks to close the running IDEs (Core/Process.ps1), also after "yes to
+        # all"; their process names come from the launchers, so the check is
+        # repeated with the JetBrains pattern afterwards.
+        $ide = New-ResikAppSpec -DisplayName "JetBrains IDE ($($running -join ', '))" -ProcessName $running
+        $refusal = Close-ResikAppForCleanup -Context $Context -App $ide `
+            -Label 'IDE data' -Consequence 'Unsaved changes in the IDE may be lost.'
+        if ($refusal) { return $refusal }
+        $running = @(Get-ResikJetBrainsRunningIde)
+        if ($running.Count -gt 0) {
+            return [pscustomobject]@{
+                Status  = 'Skipped'
+                Details = "A JetBrains IDE is still running ($($running -join ', ')). Close it and run Resik again. Nothing was removed."
+            }
         }
     }
 
@@ -296,7 +306,7 @@ function New-ResikJetBrainsLeftoverTarget {
         -Description ('Deletes all data of JetBrains IDE versions you choose, typically ones that are no longer ' +
             'installed: caches, indexes, logs, plugins, settings, and Local History, in %LOCALAPPDATA%\JetBrains ' +
             'and %APPDATA%\JetBrains. Resik cannot tell which versions are still installed, so it asks about each ' +
-            'version; it cannot be recovered. Refused while a JetBrains IDE is running. Never chosen by --all or ' +
+            'version; it cannot be recovered. Asks to close a running JetBrains IDE first. Never chosen by --all or ' +
             '"select all".') `
         -Detect { Invoke-ResikJetBrainsLeftoverDetection } `
         -Analyze { Invoke-ResikJetBrainsLeftoverAnalysis } `
