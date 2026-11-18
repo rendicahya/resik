@@ -62,6 +62,10 @@ $resikSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'src\Resik'
 # Spinner.Tests.ps1 reloads the real function.
 function Test-ResikSpinnerSupported { $false }
 
+# Likewise, never change the real console's input mode; the picker then reads
+# keys only. TargetPicker.Tests.ps1 mocks this to test mouse clicks.
+function Enable-ResikPickerMouse { $null }
+
 function New-TestRunResult {
     # A fake Invoke-ResikNativeCommand result, for mocks.
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
@@ -91,8 +95,10 @@ function New-TestTarget {
         [scriptblock] $Detect = { [pscustomobject]@{ Available = $true } },
         [scriptblock] $Analyze = { [pscustomobject]@{ EstimatedBytes = 1024; Details = 'fake cache' } },
         [scriptblock] $Clean = $null,
-        [string] $RiskLevel = 'Low'
+        [string] $RiskLevel = 'Low',
+        [string] $Group = '',
+        [switch] $ExplicitOnly
     )
     New-ResikTarget -Id $Id -Name "Fake $Id" -Category Developer -RiskLevel $RiskLevel `
-        -Description 'Test target' -Detect $Detect -Analyze $Analyze -Clean $Clean
+        -Description 'Test target' -Detect $Detect -Analyze $Analyze -Clean $Clean -Group $Group -ExplicitOnly:$ExplicitOnly
 }

@@ -150,7 +150,7 @@ function New-ResikEdgeProfileTarget {
     param()
 
     New-ResikTarget -Id 'edge-profile' -Name 'Microsoft Edge data (reset)' -Category Windows -RiskLevel High `
-        -ExplicitOnly `
+        -ExplicitOnly -Group 'Microsoft Edge' `
         -Description ('Deletes all Microsoft Edge data in %LOCALAPPDATA%\Microsoft\Edge\User Data: every profile ' +
             'with its history, cookies, saved passwords, extensions, and settings, so Edge starts as if newly ' +
             'installed. Only data synced to a Microsoft account comes back. It cannot be recovered, so Resik asks ' +

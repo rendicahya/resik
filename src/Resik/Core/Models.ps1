@@ -64,7 +64,11 @@ function New-ResikTarget {
 
         [scriptblock] $Clean = $null,
 
-        [switch] $ExplicitOnly
+        [switch] $ExplicitOnly,
+
+        # Targets with the same Group (such as the parts of one browser) are
+        # shown together under that heading in the picker.
+        [string] $Group = ''
     )
 
     [pscustomobject]@{
@@ -78,6 +82,7 @@ function New-ResikTarget {
         Analyze      = $Analyze
         Clean        = $Clean
         ExplicitOnly = [bool]$ExplicitOnly
+        Group        = $Group
     }
 }
 

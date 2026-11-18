@@ -6,8 +6,15 @@
 # and the small console wrappers touch the console.
 #
 # Keys: Up/Down move, Space toggles, A selects all, N selects none, Enter
-# confirms, Q or Escape cancels. Terminals without key input get a numbered
-# list instead (Read-ResikNumberedSelection).
+# confirms, Q or Escape cancels. When the console reports mouse events
+# (Enable-ResikPickerMouse), a left click toggles the row under it and the
+# wheel moves the cursor. Terminals without key input get a numbered list
+# instead (Read-ResikNumberedSelection).
+#
+# Targets with the same Group (the parts of one browser) are listed under a
+# heading row; toggling the heading toggles its parts. State.Items holds the
+# targets in display order, State.Rows the drawn rows, and Cursor indexes
+# State.Rows.
 
 function Get-ResikPickerMode {
     # 'Keys' for the full picker, 'Numbered' for the typed fallback, or 'None'
@@ -80,15 +87,97 @@ function New-ResikPickerState {
             })
     }
 
-    $sorted = @($items | Sort-Object -Property Rank,
+    # Targets that share a Group (the parts of one browser) are kept together
+    # under a heading row, in catalog order. The group is sorted as one entry,
+    # by its best status and its total size.
+    $entries = New-Object System.Collections.Generic.List[object]
+    $byGroup = @{}
+    foreach ($item in $items) {
+        $groupName = [string](Get-ResikOptionalProperty $item.Target 'Group')
+        if ($groupName -and $byGroup.ContainsKey($groupName)) {
+            $byGroup[$groupName].Members.Add($item)
+            continue
+        }
+        $entry = [pscustomobject]@{ Name = $groupName; Members = New-Object System.Collections.Generic.List[object] }
+        $entry.Members.Add($item)
+        if ($groupName) { $byGroup[$groupName] = $entry }
+        $entries.Add($entry)
+    }
+    foreach ($entry in $entries) {
+        $total = $null
+        foreach ($member in $entry.Members) {
+            if ($null -ne $member.EstimatedBytes) { $total = [long]$total + $member.EstimatedBytes }
+        }
+        $entry | Add-Member -NotePropertyName Rank -NotePropertyValue (($entry.Members | Measure-Object -Property Rank -Minimum).Minimum)
+        $entry | Add-Member -NotePropertyName EstimatedBytes -NotePropertyValue $total
+        $entry | Add-Member -NotePropertyName Order -NotePropertyValue (($entry.Members | Measure-Object -Property Order -Minimum).Minimum)
+    }
+
+    $sorted = @($entries | Sort-Object -Property Rank,
         @{ Expression = { $null -eq $_.EstimatedBytes } },
         @{ Expression = { $_.EstimatedBytes }; Descending = $true },
         Order)
 
+    $flat = New-Object System.Collections.Generic.List[object]
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($entry in $sorted) {
+        $members = @($entry.Members | Sort-Object -Property Order)
+        $grouped = $entry.Name -and $members.Count -gt 1
+        if ($grouped) {
+            $rows.Add([pscustomobject]@{ Kind = 'Group'; Name = $entry.Name; Item = $null; Members = $members; Indent = 0 })
+        }
+        foreach ($member in $members) {
+            $flat.Add($member)
+            $rows.Add([pscustomobject]@{ Kind = 'Item'; Name = ''; Item = $member; Members = @($member); Indent = [int]$grouped })
+        }
+    }
+
     [pscustomobject]@{
-        Items  = $sorted
+        Items  = $flat.ToArray()
+        Rows   = $rows.ToArray()
         Cursor = 0
     }
+}
+
+function Switch-ResikPickerRow {
+    # Toggles one row. A group row selects every selectable part except those
+    # that must be chosen one by one, or clears the group when they are all
+    # selected already.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [object] $Row
+    )
+
+    if ($Row.Kind -eq 'Item') {
+        if ($Row.Item.Selectable) { $Row.Item.Selected = -not $Row.Item.Selected }
+        return
+    }
+    $eligible = @($Row.Members | Where-Object { $_.Selectable -and -not (Get-ResikOptionalProperty $_.Target 'ExplicitOnly') })
+    $select = @($eligible | Where-Object { -not $_.Selected }).Count -gt 0
+    foreach ($member in $Row.Members) {
+        if ($select) {
+            if ($eligible -contains $member) { $member.Selected = $true }
+        }
+        else {
+            $member.Selected = $false
+        }
+    }
+}
+
+function Get-ResikPickerGroupBox {
+    # [x] when every selectable part is selected, [~] for some, [ ] for none,
+    # and [-] when no part can be selected.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([object] $Row)
+
+    $selectable = @($Row.Members | Where-Object { $_.Selectable })
+    if ($selectable.Count -eq 0) { return '[-]' }
+    $selected = @($selectable | Where-Object { $_.Selected }).Count
+    if ($selected -eq 0) { return '[ ]' }
+    if ($selected -eq $selectable.Count) { return '[x]' }
+    '[~]'
 }
 
 function ConvertFrom-ResikConsoleKey {
@@ -119,7 +208,8 @@ function ConvertFrom-ResikConsoleKey {
 
 function Invoke-ResikPickerKey {
     # Applies a picker command to the state. Returns 'Continue', 'Confirm', or
-    # 'Cancel'.
+    # 'Cancel'. 'Click' moves the cursor to Row (an index into State.Rows, or
+    # -1 for a click outside the list) and toggles it.
     [CmdletBinding()]
     [OutputType([string])]
     param(
@@ -127,11 +217,20 @@ function Invoke-ResikPickerKey {
         [object] $State,
 
         [Parameter(Mandatory)]
-        [string] $Command
+        [string] $Command,
+
+        [int] $Row = -1
     )
 
-    $count = $State.Items.Count
+    $count = $State.Rows.Count
     switch ($Command) {
+        'Click' {
+            if ($Row -ge 0 -and $Row -lt $count) {
+                $State.Cursor = $Row
+                Switch-ResikPickerRow -Row $State.Rows[$Row]
+            }
+            return 'Continue'
+        }
         'Up' {
             if ($count -gt 0) { $State.Cursor = ($State.Cursor - 1 + $count) % $count }
             return 'Continue'
@@ -141,10 +240,7 @@ function Invoke-ResikPickerKey {
             return 'Continue'
         }
         'Toggle' {
-            if ($count -gt 0) {
-                $item = $State.Items[$State.Cursor]
-                if ($item.Selectable) { $item.Selected = -not $item.Selected }
-            }
+            if ($count -gt 0) { Switch-ResikPickerRow -Row $State.Rows[$State.Cursor] }
             return 'Continue'
         }
         'All' {
@@ -172,14 +268,43 @@ function Format-ResikPickerRow {
 
         [int] $IdWidth = 12,
 
-        [int] $NameWidth = 24
+        [int] $NameWidth = 24,
+
+        # Parts of a group are indented under its heading.
+        [int] $Indent = 0
     )
 
     $target = $Item.Target
     $size = if ($null -eq $Item.EstimatedBytes) { '?' } else { Format-ResikSize $Item.EstimatedBytes }
     if ($Item.Note -and $null -eq $Item.EstimatedBytes) { $size = '' }
     $name = Limit-ResikText $target.Name $NameWidth
-    ("{0,-$IdWidth}  {1,-$NameWidth}  {2,9}  {3,-6}  {4}" -f $target.Id, $name, $size, "$($target.RiskLevel)", $Item.Note).TrimEnd()
+    $id = ('  ' * $Indent) + $target.Id
+    ("{0,-$IdWidth}  {1,-$NameWidth}  {2,9}  {3,-6}  {4}" -f $id, $name, $size, "$($target.RiskLevel)", $Item.Note).TrimEnd()
+}
+
+function Format-ResikPickerGroupRow {
+    # A group heading: its name across the ID and name columns, and the total
+    # size of its parts.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [object] $Row,
+
+        [int] $IdWidth = 12,
+
+        [int] $NameWidth = 24
+    )
+
+    $total = $null
+    foreach ($member in $Row.Members) {
+        if ($null -ne $member.EstimatedBytes) { $total = [long]$total + $member.EstimatedBytes }
+    }
+    $size = if ($null -eq $total) { '' } else { Format-ResikSize $total }
+    $width = $IdWidth + 2 + $NameWidth
+    $note = ''
+    if (@($Row.Members | Where-Object { $_.Selectable }).Count -eq 0) { $note = "$($Row.Members[0].Note)" }
+    ("{0,-$width}  {1,9}  {2,-6}  {3}" -f (Limit-ResikText $Row.Name $width), $size, '', $note).TrimEnd()
 }
 
 function Get-ResikPickerLayout {
@@ -189,16 +314,18 @@ function Get-ResikPickerLayout {
 
     $idWidth = 2
     $nameWidth = 4
-    foreach ($item in $State.Items) {
-        $idWidth = [Math]::Max($idWidth, $item.Target.Id.Length)
-        $nameWidth = [Math]::Max($nameWidth, $item.Target.Name.Length)
+    foreach ($row in $State.Rows) {
+        if ($row.Kind -ne 'Item') { continue }
+        $idWidth = [Math]::Max($idWidth, $row.Item.Target.Id.Length + 2 * $row.Indent)
+        $nameWidth = [Math]::Max($nameWidth, $row.Item.Target.Name.Length)
     }
     [pscustomobject]@{ IdWidth = $idWidth; NameWidth = [Math]::Min($nameWidth, 30) }
 }
 
 function Format-ResikPickerScreen {
-    # Returns the lines to draw as objects with Text and Color ($null for the
-    # default color). Every line is padded or cut to Width - 1 characters so
+    # Returns the lines to draw as objects with Text, Color ($null for the
+    # default color), and Row (the index into State.Rows a click on the line
+    # selects, or -1). Every line is padded or cut to Width - 1 characters so
     # that redrawing in place never wraps, and the line count never changes.
     [CmdletBinding()]
     param(
@@ -208,37 +335,63 @@ function Format-ResikPickerScreen {
         [string] $Title = 'Select targets to clean',
 
         [ValidateRange(20, 10000)]
-        [int] $Width = 80
+        [int] $Width = 80,
+
+        # The console reports mouse clicks, so the help line mentions them.
+        [switch] $Mouse
     )
 
     $lines = New-Object System.Collections.Generic.List[object]
     $limit = $Width - 1
     $addLine = {
-        param([string] $Text, $Color = $null)
+        param([string] $Text, $Color = $null, [int] $Row = -1)
         if ($Text.Length -gt $limit) { $Text = $Text.Substring(0, $limit - 3) + '...' }
-        $lines.Add([pscustomobject]@{ Text = $Text.PadRight($limit); Color = $Color })
+        $lines.Add([pscustomobject]@{ Text = $Text.PadRight($limit); Color = $Color; Row = $Row })
     }
 
     $columns = Get-ResikPickerLayout -State $State
     $header = '      ' + ("{0,-$($columns.IdWidth)}  {1,-$($columns.NameWidth)}  {2,9}  {3}" -f 'Target', '', 'Size', 'Risk')
+    $help = if ($Mouse) {
+        'Up/Down move   Space or click select   A all   N none   Enter confirm   Q cancel'
+    }
+    else {
+        'Up/Down move   Space select   A all   N none   Enter confirm   Q cancel'
+    }
 
     & $addLine $Title 'White'
-    & $addLine 'Up/Down move   Space select   A all   N none   Enter confirm   Q cancel' 'DarkGray'
+    & $addLine $help 'DarkGray'
     & $addLine ''
     & $addLine $header 'DarkGray'
 
-    for ($index = 0; $index -lt $State.Items.Count; $index++) {
-        $item = $State.Items[$index]
+    for ($index = 0; $index -lt $State.Rows.Count; $index++) {
+        $row = $State.Rows[$index]
         $isCursor = $index -eq $State.Cursor
         $pointer = if ($isCursor) { '>' } else { ' ' }
-        $box = if (-not $item.Selectable) { '[-]' } elseif ($item.Selected) { '[x]' } else { '[ ]' }
-        $color = if ($isCursor) { 'Cyan' } elseif (-not $item.Selectable) { 'DarkGray' } elseif ($item.Selected) { 'Green' } else { $null }
-        & $addLine "$pointer $box $(Format-ResikPickerRow $item -IdWidth $columns.IdWidth -NameWidth $columns.NameWidth)" $color
+        if ($row.Kind -eq 'Group') {
+            $box = Get-ResikPickerGroupBox -Row $row
+            $text = Format-ResikPickerGroupRow -Row $row -IdWidth $columns.IdWidth -NameWidth $columns.NameWidth
+            $color = if ($isCursor) { 'Cyan' } elseif ($box -eq '[-]') { 'DarkGray' } elseif ($box -eq '[x]') { 'Green' } else { 'White' }
+        }
+        else {
+            $item = $row.Item
+            $box = if (-not $item.Selectable) { '[-]' } elseif ($item.Selected) { '[x]' } else { '[ ]' }
+            $text = Format-ResikPickerRow $item -IdWidth $columns.IdWidth -NameWidth $columns.NameWidth -Indent $row.Indent
+            $color = if ($isCursor) { 'Cyan' } elseif (-not $item.Selectable) { 'DarkGray' } elseif ($item.Selected) { 'Green' } else { $null }
+        }
+        & $addLine "$pointer $box $text" $color $index
     }
 
     & $addLine ''
-    $current = if ($State.Items.Count -gt 0) { $State.Items[$State.Cursor] } else { $null }
-    $details = if ($null -ne $current) { $current.Details } else { '' }
+    $details = ''
+    if ($State.Rows.Count -gt 0) {
+        $current = $State.Rows[$State.Cursor]
+        $details = if ($current.Kind -eq 'Group') {
+            "Selecting $($current.Name) selects all its parts except those that must be chosen one by one."
+        }
+        else {
+            $current.Item.Details
+        }
+    }
     & $addLine "  $details" 'DarkGray'
 
     $selected = @($State.Items | Where-Object { $_.Selected })
@@ -278,6 +431,194 @@ function Read-ResikPickerKey {
     ConvertFrom-ResikConsoleKey -Key $keyInfo.Key -Character $keyInfo.KeyChar
 }
 
+function Get-ResikConsoleInputSource {
+    # C# for reading keys and mouse events from the console input buffer with
+    # the documented Win32 calls GetConsoleMode, SetConsoleMode, and
+    # ReadConsoleInputW. [Console]::ReadKey reports keys only.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace Resik
+{
+    public class ConsoleInputEvent
+    {
+        public string Kind;        // Key, Click, or Wheel
+        public ConsoleKey Key;
+        public char Character;
+        public int X;
+        public int Y;
+        public int Delta;          // Wheel: positive away from the user
+    }
+
+    public static class ConsoleInput
+    {
+        const int StdInputHandle = -10;
+        const uint EnableMouseInput = 0x0010;
+        const uint EnableQuickEditMode = 0x0040;
+        const uint EnableExtendedFlags = 0x0080;
+        const ushort KeyEventType = 0x0001;
+        const ushort MouseEventType = 0x0002;
+        const uint FromLeft1stButtonPressed = 0x0001;
+        const uint DoubleClick = 0x0002;
+        const uint MouseWheeled = 0x0004;
+
+        [StructLayout(LayoutKind.Explicit)]
+        struct InputRecord
+        {
+            [FieldOffset(0)] public ushort EventType;
+            [FieldOffset(4)] public int KeyDown;
+            [FieldOffset(8)] public ushort KeyRepeatCount;
+            [FieldOffset(10)] public ushort KeyVirtualKeyCode;
+            [FieldOffset(12)] public ushort KeyVirtualScanCode;
+            [FieldOffset(14)] public ushort KeyUnicodeChar;
+            [FieldOffset(16)] public uint KeyControlKeyState;
+            [FieldOffset(4)] public short MouseX;
+            [FieldOffset(6)] public short MouseY;
+            [FieldOffset(8)] public uint MouseButtonState;
+            [FieldOffset(12)] public uint MouseControlKeyState;
+            [FieldOffset(16)] public uint MouseEventFlags;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern IntPtr GetStdHandle(int handle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool GetConsoleMode(IntPtr handle, out uint mode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool SetConsoleMode(IntPtr handle, uint mode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+        [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "ReadConsoleInputW")]
+        static extern bool ReadConsoleInput(IntPtr handle, [Out] InputRecord[] buffer, uint length, out uint read);
+
+        static IntPtr Input { get { return GetStdHandle(StdInputHandle); } }
+
+        // Turns on mouse input and turns off Quick Edit, which would otherwise
+        // take clicks for text selection. Returns the previous mode.
+        public static uint EnableMouse()
+        {
+            uint mode;
+            if (!GetConsoleMode(Input, out mode))
+            {
+                throw new InvalidOperationException("The console input mode could not be read.");
+            }
+            uint mouseMode = (mode | EnableMouseInput | EnableExtendedFlags) & ~EnableQuickEditMode;
+            if (!SetConsoleMode(Input, mouseMode))
+            {
+                throw new InvalidOperationException("The console input mode could not be changed.");
+            }
+            return mode;
+        }
+
+        public static void Restore(uint mode)
+        {
+            SetConsoleMode(Input, mode | EnableExtendedFlags);
+        }
+
+        // Waits up to timeout milliseconds for a key press, a left click, or a
+        // wheel turn, and returns null when none arrived, so the caller can
+        // notice Ctrl+C between calls.
+        public static ConsoleInputEvent Read(int timeout)
+        {
+            InputRecord[] records = new InputRecord[1];
+            DateTime end = DateTime.UtcNow.AddMilliseconds(timeout);
+            while (true)
+            {
+                int left = (int)(end - DateTime.UtcNow).TotalMilliseconds;
+                if (left <= 0 || WaitForSingleObject(Input, (uint)left) != 0)
+                {
+                    return null;
+                }
+                uint read;
+                if (!ReadConsoleInput(Input, records, 1, out read) || read == 0)
+                {
+                    return null;
+                }
+                InputRecord record = records[0];
+                if (record.EventType == KeyEventType && record.KeyDown != 0)
+                {
+                    ConsoleInputEvent key = new ConsoleInputEvent();
+                    key.Kind = "Key";
+                    key.Key = (ConsoleKey)record.KeyVirtualKeyCode;
+                    key.Character = (char)record.KeyUnicodeChar;
+                    return key;
+                }
+                if (record.EventType == MouseEventType)
+                {
+                    uint flags = record.MouseEventFlags;
+                    bool press = (flags == 0 || flags == DoubleClick) &&
+                        (record.MouseButtonState & FromLeft1stButtonPressed) != 0;
+                    if (press || flags == MouseWheeled)
+                    {
+                        ConsoleInputEvent mouse = new ConsoleInputEvent();
+                        mouse.Kind = press ? "Click" : "Wheel";
+                        mouse.X = record.MouseX;
+                        mouse.Y = record.MouseY;
+                        mouse.Delta = (short)(record.MouseButtonState >> 16);
+                        return mouse;
+                    }
+                }
+            }
+        }
+    }
+}
+'@
+}
+
+function Enable-ResikPickerMouse {
+    # Turns on mouse input for the picker. Returns the previous console input
+    # mode to pass to Disable-ResikPickerMouse, or $null when the console
+    # cannot report mouse events (then the picker uses the keyboard only).
+    [CmdletBinding()]
+    param()
+
+    if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') { return $null }
+    try {
+        if ($null -eq ('Resik.ConsoleInput' -as [type])) {
+            Add-Type -TypeDefinition (Get-ResikConsoleInputSource) -ErrorAction Stop
+        }
+        [Resik.ConsoleInput]::EnableMouse()
+    }
+    catch {
+        Write-Verbose "Mouse input is unavailable: $($_.Exception.Message)"
+        $null
+    }
+}
+
+function Disable-ResikPickerMouse {
+    [CmdletBinding()]
+    param([object] $Mode)
+
+    if ($null -eq $Mode) { return }
+    try { [Resik.ConsoleInput]::Restore([uint32]$Mode) } catch { Write-Verbose 'Could not restore the console input mode.' }
+}
+
+function Read-ResikPickerEvent {
+    # Waits for a key, click, or wheel turn while mouse input is on. Returns a
+    # picker command, or for a click an object with Command 'Click' and the
+    # clicked console row Y.
+    [CmdletBinding()]
+    param()
+
+    while ($true) {
+        $inputEvent = [Resik.ConsoleInput]::Read(100)
+        if ($null -eq $inputEvent) { continue }
+        switch ($inputEvent.Kind) {
+            'Key' { return ConvertFrom-ResikConsoleKey -Key $inputEvent.Key -Character $inputEvent.Character }
+            'Wheel' { if ($inputEvent.Delta -gt 0) { return 'Up' } else { return 'Down' } }
+            'Click' { return [pscustomobject]@{ Command = 'Click'; Y = $inputEvent.Y } }
+        }
+    }
+}
+
 function Show-ResikTargetPicker {
     # Draws the picker and handles keys until the user confirms or cancels.
     # Returns 'Confirm' or 'Cancel'; the selection is left in State.
@@ -292,10 +633,11 @@ function Show-ResikTargetPicker {
 
     $cursorWasVisible = $null
     try { $cursorWasVisible = [Console]::CursorVisible; [Console]::CursorVisible = $false } catch { $cursorWasVisible = $null }
+    $mouseMode = Enable-ResikPickerMouse
     try {
         $origin = $null
         while ($true) {
-            $lines = @(Format-ResikPickerScreen -State $State -Title $Title -Width (Get-ResikConsoleWidth))
+            $lines = @(Format-ResikPickerScreen -State $State -Title $Title -Width (Get-ResikConsoleWidth) -Mouse:($null -ne $mouseMode))
             if ($null -ne $origin) { Move-ResikConsoleCursor -Row $origin }
             foreach ($line in $lines) {
                 if ($line.Color) { Write-Host $line.Text -ForegroundColor $line.Color } else { Write-Host $line.Text }
@@ -303,11 +645,21 @@ function Show-ResikTargetPicker {
             # Measured after the first draw, because drawing can scroll the window.
             if ($null -eq $origin) { $origin = (Get-ResikConsoleCursorRow) - $lines.Count }
 
-            $action = Invoke-ResikPickerKey -State $State -Command (Read-ResikPickerKey)
+            $next = if ($null -ne $mouseMode) { Read-ResikPickerEvent } else { Read-ResikPickerKey }
+            if ($next -is [string]) {
+                $action = Invoke-ResikPickerKey -State $State -Command $next
+            }
+            else {
+                # A click is in console rows; find the picker row drawn there.
+                $line = $next.Y - $origin
+                $row = if ($line -ge 0 -and $line -lt $lines.Count) { $lines[$line].Row } else { -1 }
+                $action = Invoke-ResikPickerKey -State $State -Command $next.Command -Row $row
+            }
             if ($action -ne 'Continue') { return $action }
         }
     }
     finally {
+        Disable-ResikPickerMouse -Mode $mouseMode
         if ($null -ne $cursorWasVisible) {
             try { [Console]::CursorVisible = $cursorWasVisible } catch { Write-Verbose 'Could not restore the cursor.' }
         }
@@ -372,9 +724,14 @@ function Read-ResikNumberedSelection {
     Write-Host ''
     $columns = Get-ResikPickerLayout -State $State
     $number = 0
-    foreach ($item in $State.Items) {
+    foreach ($row in $State.Rows) {
+        if ($row.Kind -eq 'Group') {
+            Write-Host "     $(Format-ResikPickerGroupRow -Row $row -IdWidth $columns.IdWidth -NameWidth $columns.NameWidth)"
+            continue
+        }
+        $item = $row.Item
         $label = if ($item.Selectable) { $number++; '{0,3})' -f $number } else { '   -' }
-        Write-Host "$label $(Format-ResikPickerRow $item -IdWidth $columns.IdWidth -NameWidth $columns.NameWidth)"
+        Write-Host "$label $(Format-ResikPickerRow $item -IdWidth $columns.IdWidth -NameWidth $columns.NameWidth -Indent $row.Indent)"
     }
     Write-Host ''
     if ($selectable.Count -eq 0) {

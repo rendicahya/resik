@@ -55,21 +55,29 @@ Run `resik` with no options to pick what to clean from a list:
 
 ```
 Select targets to clean
-Up/Down move   Space select   A all   N none   Enter confirm   Q cancel
+Up/Down move   Space or click select   A all   N none   Enter confirm   Q cancel
 
-      Target                                Size  Risk
-> [x] uv           uv cache               1.9 GB  Low
-  [x] npm          npm cache            370.6 MB  Low
-  [ ] pip          pip cache            300.5 MB  Low
-  [ ] scoop-cache  Scoop download cache   1.2 MB  Low
-  [ ] choco        Chocolatey HTTP cache       ?  Low
-  [-] jetbrains    JetBrains IDE caches 520.4 MB  Low     report only
+      Target                                                         Size  Risk
+> [x] uv                        uv cache                           1.9 GB  Low
+  [~] Google Chrome                                                1.4 GB
+  [x]   chrome-cache            Google Chrome cached images...     1.1 GB  Low
+  [x]   chrome-code-cache       Google Chrome compiled scri...   260.0 MB  Low
+  [ ]   chrome-gpu-cache        Google Chrome GPU shader cache    12.0 MB  Low
+  [ ]   chrome-service-workers  Google Chrome service worke...    45.0 MB  Medium
+  [ ] pip                       pip cache                        300.0 MB  Low
+  [ ] choco                     Chocolatey HTTP cache                   ?  Low
+  [-] jetbrains                 JetBrains IDE caches             520.0 MB  Low     report only
 
   ~\AppData\Local\uv\cache (5145 files)
-  Selected: 2 targets, about 2.3 GB
+  Selected: 3 targets, about 3.3 GB
 ```
 
-Targets that can be cleaned come first, largest first. Targets whose analysis
+Targets that can be cleaned come first, largest first. A browser's parts are
+listed together under its name; selecting the name selects all of its parts
+except the ones never chosen by "select all" (`[~]` means some are selected).
+Clicking a row selects it like Space, and the mouse wheel moves the cursor, in
+consoles that report mouse input (Windows Terminal and the classic console;
+Shift+drag still selects text in Windows Terminal). Targets whose analysis
 failed, or that Resik only measures (see [Analysis only](#analysis-only)), are
 shown as `[-]` and cannot be selected; tools that are not installed are not
 shown. `?` means the size cannot be measured in advance, and `~` is

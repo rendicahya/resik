@@ -22,6 +22,144 @@ BeforeAll {
         )
         New-ResikPickerState -Targets $targets -Analysis $analysis
     }
+
+    function New-TestGroupedState {
+        # 'uv' (2 KB), a group 'B' of 'b-cache' (1 KB), 'b-code' (3 KB), and
+        # the explicit-only 'b-sw' (512 B), and 'pip' (1 KB).
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+            Justification = 'Creates an in-memory object only.')]
+        param()
+        $clean = { [pscustomobject]@{ Status = 'Success' } }
+        $targets = @(
+            (New-TestTarget -Id 'uv' -Clean $clean),
+            (New-TestTarget -Id 'b-cache' -Clean $clean -Group 'B'),
+            (New-TestTarget -Id 'b-code' -Clean $clean -Group 'B'),
+            (New-TestTarget -Id 'b-sw' -Clean $clean -Group 'B' -ExplicitOnly),
+            (New-TestTarget -Id 'pip' -Clean $clean)
+        )
+        $sizes = @{ 'uv' = 2048; 'b-cache' = 1024; 'b-code' = 3072; 'b-sw' = 512; 'pip' = 1024 }
+        $analysis = @(foreach ($id in $sizes.Keys) {
+                New-ResikResult -TargetId $id -Operation Analyze -Status AnalysisOnly -EstimatedBytes $sizes[$id]
+            })
+        New-ResikPickerState -Targets $targets -Analysis $analysis
+    }
+}
+
+Describe 'Picker groups' {
+    It 'keeps a group together in catalog order, sorted by its total size' {
+        $state = New-TestGroupedState
+        @($state.Items | ForEach-Object { $_.Target.Id }) | Should -Be @('b-cache', 'b-code', 'b-sw', 'uv', 'pip')
+        @($state.Rows | ForEach-Object { $_.Kind }) | Should -Be @('Group', 'Item', 'Item', 'Item', 'Item', 'Item')
+        $state.Rows[0].Name | Should -BeExactly 'B'
+        @($state.Rows | ForEach-Object { $_.Indent }) | Should -Be @(0, 1, 1, 1, 0, 0)
+    }
+
+    It 'shows a group of one target as a plain row' {
+        $target = New-TestTarget -Id 'x' -Clean { } -Group 'X'
+        $analysis = New-ResikResult -TargetId 'x' -Operation Analyze -Status AnalysisOnly
+        $state = New-ResikPickerState -Targets @($target) -Analysis @($analysis)
+        @($state.Rows | ForEach-Object { $_.Kind }) | Should -Be @('Item')
+        $state.Rows[0].Indent | Should -Be 0
+    }
+
+    It 'selects every part but explicit-only ones from the heading, then clears them' {
+        $state = New-TestGroupedState
+        Invoke-ResikPickerKey -State $state -Command Toggle | Out-Null
+        @($state.Items | Where-Object Selected | ForEach-Object { $_.Target.Id }) | Should -Be @('b-cache', 'b-code')
+        Get-ResikPickerGroupBox -Row $state.Rows[0] | Should -BeExactly '[~]'
+
+        Invoke-ResikPickerKey -State $state -Command Toggle | Out-Null
+        @($state.Items | Where-Object Selected).Count | Should -Be 0
+        Get-ResikPickerGroupBox -Row $state.Rows[0] | Should -BeExactly '[ ]'
+    }
+
+    It 'shows [x] when every part is selected, and clears them all from the heading' {
+        $state = New-TestGroupedState
+        foreach ($item in $state.Items) { if ($item.Target.Group -eq 'B') { $item.Selected = $true } }
+        Get-ResikPickerGroupBox -Row $state.Rows[0] | Should -BeExactly '[x]'
+
+        Invoke-ResikPickerKey -State $state -Command Toggle | Out-Null
+        @($state.Items | Where-Object Selected).Count | Should -Be 0
+    }
+
+    It 'draws the heading with the total size and indents its parts' {
+        $state = New-TestGroupedState
+        $state.Cursor = 2
+        $text = @(Format-ResikPickerScreen -State $state -Width 100 | ForEach-Object { $_.Text.TrimEnd() })
+        $text[3..9] | Should -Be @(
+            '      Target                        Size  Risk'
+            '  [ ] B                           4.5 KB'
+            '  [ ]   b-cache  Fake b-cache     1.0 KB  Low'
+            '> [ ]   b-code   Fake b-code      3.0 KB  Low'
+            '  [ ]   b-sw     Fake b-sw         512 B  Low'
+            '  [ ] uv         Fake uv          2.0 KB  Low'
+            '  [ ] pip        Fake pip         1.0 KB  Low'
+        )
+    }
+
+    It 'explains the heading in the details line' {
+        $state = New-TestGroupedState
+        $text = @(Format-ResikPickerScreen -State $state -Width 200 | ForEach-Object { $_.Text.TrimEnd() })
+        $text[-2] | Should -BeExactly '  Selecting B selects all its parts except those that must be chosen one by one.'
+    }
+
+    It 'lists headings without numbers in the numbered fallback' {
+        Mock Write-Host {}
+        Mock Read-ResikLine { '2' }
+        $state = New-TestGroupedState
+
+        Read-ResikNumberedSelection -State $state | Should -BeExactly 'Confirm'
+
+        @($state.Items | Where-Object Selected | ForEach-Object { $_.Target.Id }) | Should -Be @('b-code')
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '     B *' }
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '  2)   b-code *' }
+    }
+}
+
+Describe 'Get-ResikConsoleInputSource' {
+    It 'compiles' {
+        if ($null -eq ('Resik.ConsoleInput' -as [type])) {
+            Add-Type -TypeDefinition (Get-ResikConsoleInputSource) -ErrorAction Stop
+        }
+        'Resik.ConsoleInput' -as [type] | Should -Not -BeNullOrEmpty
+        [Resik.ConsoleInput].GetMethod('Read') | Should -Not -BeNullOrEmpty
+    }
+}
+
+Describe 'Browser groups in the catalog' {
+    It 'groups each browser''s parts, and edge-profile with Edge, but not app caches' {
+        $catalog = @(Get-ResikTargetCatalog)
+        $group = @{}
+        foreach ($target in $catalog) { $group[$target.Id] = $target.Group }
+        $group['chrome-cache'] | Should -BeExactly 'Google Chrome'
+        $group['comet-service-workers'] | Should -BeExactly 'Comet'
+        $group['edge-gpu-cache'] | Should -BeExactly 'Microsoft Edge'
+        $group['edge-profile'] | Should -BeExactly 'Microsoft Edge'
+        $group['vscode-cache'] | Should -BeExactly ''
+        $group['uv'] | Should -BeExactly ''
+    }
+}
+
+Describe 'Picker clicks' {
+    It 'moves the cursor to the clicked row and toggles it' {
+        $state = New-TestGroupedState
+        Invoke-ResikPickerKey -State $state -Command Click -Row 4 | Should -BeExactly 'Continue'
+        $state.Cursor | Should -Be 4
+        @($state.Items | Where-Object Selected | ForEach-Object { $_.Target.Id }) | Should -Be @('uv')
+    }
+
+    It 'ignores a click outside the list' {
+        $state = New-TestGroupedState
+        Invoke-ResikPickerKey -State $state -Command Click -Row -1 | Out-Null
+        Invoke-ResikPickerKey -State $state -Command Click -Row 99 | Out-Null
+        $state.Cursor | Should -Be 0
+        @($state.Items | Where-Object Selected).Count | Should -Be 0
+    }
+
+    It 'marks which row each screen line selects' {
+        $state = New-TestPickerState
+        @(Format-ResikPickerScreen -State $state | ForEach-Object { $_.Row }) | Should -Be @(-1, -1, -1, -1, 0, 1, 2, -1, -1, -1)
+    }
 }
 
 Describe 'New-ResikPickerState' {
@@ -181,6 +319,26 @@ Describe 'Show-ResikTargetPicker' {
         Show-ResikTargetPicker -State $state | Should -BeExactly 'Cancel'
 
         Should -Invoke Move-ResikConsoleCursor -Times 1 -Exactly -ParameterFilter { $Row -eq (50 - ($state.Items.Count + 7)) }
+    }
+
+    It 'toggles the row under a mouse click and restores the console afterwards' {
+        Mock Enable-ResikPickerMouse { 7 }
+        Mock Disable-ResikPickerMouse {}
+        $script:events = New-Object System.Collections.Generic.Queue[object]
+        Mock Read-ResikPickerEvent { $script:events.Dequeue() }
+        $state = New-TestPickerState
+        # The screen is 10 lines drawn up to row 50, so it starts at row 40;
+        # its first target row (uv) is row 44 and pip is row 45.
+        $script:events.Enqueue([pscustomobject]@{ Command = 'Click'; Y = 45 })
+        $script:events.Enqueue([pscustomobject]@{ Command = 'Click'; Y = 2 })
+        $script:events.Enqueue('Confirm')
+
+        Show-ResikTargetPicker -State $state | Should -BeExactly 'Confirm'
+
+        @($state.Items | Where-Object Selected | ForEach-Object { $_.Target.Id }) | Should -Be @('pip')
+        Should -Invoke Read-ResikPickerKey -Times 0 -Exactly
+        Should -Invoke Write-Host -ParameterFilter { "$Object" -like '*Space or click select*' }
+        Should -Invoke Disable-ResikPickerMouse -Times 1 -Exactly -ParameterFilter { $Mode -eq 7 }
     }
 }
 

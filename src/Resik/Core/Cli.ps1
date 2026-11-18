@@ -33,8 +33,9 @@ Usage:
   resik --non-interactive --force --only <id>[,<id>...]
 
 Without --all or --only, Resik analyzes every target and shows a list to pick
-from: Up/Down move, Space selects, A selects all, N selects none, Enter
-confirms, Q or Esc cancels.
+from: Up/Down move, Space or a click selects, A selects all, N selects none,
+Enter confirms, Q or Esc cancels. A browser's parts are listed under its name,
+which selects them all at once.
 
 Options:
 $($optionLines -join [Environment]::NewLine)

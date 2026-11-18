@@ -286,7 +286,9 @@ function New-ResikChromiumTarget {
     # The scriptblocks are created from text holding only these validated IDs,
     # so they call the module's functions in whatever scope runs the target.
     $arguments = "-SpecId '$SpecId' -PartId '$PartId'"
+    $group = if ($spec.Browser) { $spec.Name } else { '' }
     New-ResikTarget -Id $id -Name $name -Category $spec.Category -RiskLevel $risk -Description $description -ExplicitOnly:$explicitOnly `
+        -Group $group `
         -Detect ([scriptblock]::Create("Invoke-ResikChromiumDetection -SpecId '$SpecId'")) `
         -Analyze ([scriptblock]::Create("Invoke-ResikChromiumAnalysis $arguments")) `
         -Clean ([scriptblock]::Create("param(`$Context) Invoke-ResikChromiumCleanup $arguments -Context `$Context"))
