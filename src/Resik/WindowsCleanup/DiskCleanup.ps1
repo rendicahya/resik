@@ -9,10 +9,12 @@
 # means not selected. Resik picks a slot no item uses yet, so a profile the
 # user saved with /sageset is never changed, sets 2 on the one item and 0 on
 # every other item, so nothing else is cleaned, and removes every value it
-# wrote afterwards, even when cleanup fails. Disk Cleanup shows a small
-# progress window while it runs. Writing HKLM needs administrator rights, so
-# targets built on this have no Clean without them. Resik never deletes the
-# item's files itself; it only measures the folders the item names.
+# wrote afterwards, even when cleanup fails. A target may run several items
+# at once (memory dumps are two items). Disk Cleanup shows a small progress
+# window while it runs. Writing HKLM needs administrator rights, so targets
+# built on this have no Clean without them. Resik never deletes the items'
+# files itself; it only measures the folders the items name, or the files and
+# folders the target names, before and after.
 
 function Get-ResikCleanMgrPath {
     # The 64-bit cleanmgr.exe, also from a 32-bit PowerShell on 64-bit Windows.
@@ -66,15 +68,35 @@ function Get-ResikFreeCleanupSlot {
 }
 
 function Get-ResikDiskCleanupHandler {
-    # The named item (or $null when Disk Cleanup has none) and all items.
+    # The named items Disk Cleanup has (Items, possibly empty) and all items.
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string] $Name
+        [string[]] $Name
     )
     $all = @(Get-ResikVolumeCacheHandler)
-    $item = $all | Where-Object { $_.Name -eq $Name } | Select-Object -First 1
-    [pscustomobject]@{ Item = $item; All = $all }
+    $items = @($all | Where-Object { $Name -contains $_.Name })
+    [pscustomobject]@{ Items = $items; All = $all }
+}
+
+function Get-ResikDiskCleanupMeasurePath {
+    # What a target measures: the real folders inside Root that its items
+    # name (when Root is given), plus MeasurePath.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [AllowEmptyCollection()]
+        [object[]] $Handler = @(),
+
+        [string] $Root = '',
+
+        [AllowEmptyCollection()]
+        [string[]] $MeasurePath = @()
+    )
+    if ($Root) {
+        foreach ($item in $Handler) { Get-ResikDiskCleanupFolder -Handler $item -Root $Root }
+    }
+    foreach ($path in $MeasurePath) { $path }
 }
 
 function Get-ResikDiskCleanupFolder {
@@ -134,11 +156,12 @@ function Remove-ResikVolumeCacheStateFlag {
 }
 
 function Invoke-ResikDiskCleanupDetection {
-    # Available when cleanmgr.exe exists and Disk Cleanup has the item.
+    # Available when cleanmgr.exe exists and Disk Cleanup has at least one of
+    # the items.
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string] $Name,
+        [string[]] $Name,
 
         [Parameter(Mandatory)]
         [string] $Label
@@ -147,24 +170,32 @@ function Invoke-ResikDiskCleanupDetection {
     if (-not (Test-Path -LiteralPath $cleanmgr -PathType Leaf)) {
         return [pscustomobject]@{ Available = $false; Details = "cleanmgr.exe was not found at $cleanmgr." }
     }
-    if ($null -eq (Get-ResikDiskCleanupHandler -Name $Name).Item) {
+    if (@((Get-ResikDiskCleanupHandler -Name $Name).Items).Count -eq 0) {
         return [pscustomobject]@{ Available = $false; Details = "Disk Cleanup has no $Label item." }
     }
     [pscustomobject]@{ Available = $true; Details = $cleanmgr }
 }
 
 function Invoke-ResikDiskCleanupAnalysis {
-    # Measures the item's folders; changes nothing.
+    # Measures the items' folders inside Root and MeasurePath; changes
+    # nothing. With Unmeasured (items whose files Windows does not list), the
+    # estimate is unknown and UnmeasuredDetails explains it.
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string] $Name,
+        [string[]] $Name,
+
+        [string] $Root = '',
+
+        [AllowEmptyCollection()]
+        [string[]] $MeasurePath = @(),
 
         [Parameter(Mandatory)]
-        [string] $Root,
+        [string] $EmptyDetails,
 
-        [Parameter(Mandatory)]
-        [string] $EmptyDetails
+        [switch] $Unmeasured,
+
+        [string] $UnmeasuredDetails = ''
     )
     if (-not (Test-ResikAdministrator)) {
         return [pscustomobject]@{
@@ -172,30 +203,40 @@ function Invoke-ResikDiskCleanupAnalysis {
             Details        = 'Needs administrator rights. To clean it, run Resik in a terminal opened with "Run as administrator".'
         }
     }
-    $folders = @(Get-ResikDiskCleanupFolder -Handler (Get-ResikDiskCleanupHandler -Name $Name).Item -Root $Root)
-    if ($folders.Count -eq 0) {
+    if ($Unmeasured) {
+        return [pscustomobject]@{ EstimatedBytes = $null; Details = $UnmeasuredDetails }
+    }
+    $handlers = Get-ResikDiskCleanupHandler -Name $Name
+    $paths = @(Get-ResikDiskCleanupMeasurePath -Handler $handlers.Items -Root $Root -MeasurePath $MeasurePath)
+    if ($paths.Count -eq 0) {
         return [pscustomobject]@{ EstimatedBytes = [long]0; Details = $EmptyDetails }
     }
-    $size = Measure-ResikPathSet -Path $folders
-    $estimate = if ($size.Unreadable -gt 0) { $null } else { $size.Bytes }
-    [pscustomobject]@{
-        EstimatedBytes = $estimate
-        Details        = "$($size.Files) file(s) in $($folders -join ', '); Disk Cleanup decides which of them to delete"
+    $size = Measure-ResikPathSet -Path $paths
+    if ($size.Files -eq 0 -and $size.Unreadable -eq 0) {
+        return [pscustomobject]@{ EstimatedBytes = [long]0; Details = $EmptyDetails }
     }
+    $estimate = if ($size.Unreadable -gt 0) { $null } else { $size.Bytes }
+    $where = if ($paths.Count -le 3) { $paths -join ', ' } else { "$($paths.Count) places" }
+    $details = "$($size.Files) file(s) in $where; Disk Cleanup decides which of them to delete"
+    if ($size.Unreadable -gt 0) { $details += "; $($size.Unreadable) folder(s) could not be read" }
+    [pscustomobject]@{ EstimatedBytes = $estimate; Details = $details }
 }
 
 function Invoke-ResikDiskCleanupItem {
-    # Runs only the named Disk Cleanup item and measures its folders.
+    # Runs only the named Disk Cleanup items and measures the items' folders
+    # inside Root and MeasurePath.
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string] $Name,
+        [string[]] $Name,
 
         [Parameter(Mandatory)]
         [string] $Label,
 
-        [Parameter(Mandatory)]
-        [string] $Root
+        [string] $Root = '',
+
+        [AllowEmptyCollection()]
+        [string[]] $MeasurePath = @()
     )
     if (-not (Test-ResikAdministrator)) {
         return [pscustomobject]@{ Status = 'Skipped'; Details = 'Needs administrator rights; nothing was changed.' }
@@ -203,7 +244,7 @@ function Invoke-ResikDiskCleanupItem {
     $cleanmgr = Get-ResikCleanMgrPath
     if (-not (Test-Path -LiteralPath $cleanmgr -PathType Leaf)) { throw "cleanmgr.exe was not found at $cleanmgr." }
     $handlers = Get-ResikDiskCleanupHandler -Name $Name
-    if ($null -eq $handlers.Item) {
+    if (@($handlers.Items).Count -eq 0) {
         return [pscustomobject]@{ Status = 'Skipped'; Details = "Disk Cleanup has no $Label item." }
     }
     $slot = Get-ResikFreeCleanupSlot -Handler $handlers.All
@@ -211,11 +252,12 @@ function Invoke-ResikDiskCleanupItem {
         return [pscustomobject]@{ Status = 'Skipped'; Details = 'Disk Cleanup slots 6100 to 6199 are all in use; nothing was changed.' }
     }
 
-    $folders = @(Get-ResikDiskCleanupFolder -Handler $handlers.Item -Root $Root)
+    $selected = @($handlers.Items | ForEach-Object { $_.Name })
+    $folders = @(Get-ResikDiskCleanupMeasurePath -Handler $handlers.Items -Root $Root -MeasurePath $MeasurePath)
     $written = New-Object System.Collections.Generic.List[string]
     try {
         foreach ($handler in $handlers.All) {
-            $value = if ($handler.Name -eq $handlers.Item.Name) { 2 } else { 0 }
+            $value = if ($selected -contains $handler.Name) { 2 } else { 0 }
             Set-ResikVolumeCacheStateFlag -Path $handler.Path -Slot $slot -Value $value -Confirm:$false
             $written.Add($handler.Path)
         }

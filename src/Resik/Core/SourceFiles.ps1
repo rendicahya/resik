@@ -37,6 +37,7 @@ function Get-ResikSourceFile {
     'WindowsCleanup\DiskCleanup.ps1'
     'WindowsCleanup\Defender.ps1'
     'WindowsCleanup\ErrorReports.ps1'
+    'WindowsCleanup\MemoryDumps.ps1'
     'WindowsCleanup\Edge.ps1'
     'WindowsCleanup\InternetCache.ps1'
     'WindowsCleanup\TempFiles.ps1'

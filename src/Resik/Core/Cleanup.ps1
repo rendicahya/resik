@@ -5,7 +5,8 @@
 # a Failed result for that target and never stops the rest.
 
 function Measure-ResikPathSet {
-    # Total size of several directories; a missing directory counts as zero.
+    # Total size of several directories (or single files); a missing one
+    # counts as zero.
     [CmdletBinding()]
     param(
         [AllowEmptyCollection()]
@@ -16,6 +17,11 @@ function Measure-ResikPathSet {
     $files = 0
     $unreadable = 0
     foreach ($item in $Path) {
+        if (Test-Path -LiteralPath $item -PathType Leaf) {
+            $bytes += (New-Object System.IO.FileInfo $item).Length
+            $files++
+            continue
+        }
         if (-not (Test-Path -LiteralPath $item -PathType Container)) { continue }
         $size = Measure-ResikDirectory -Path $item
         $bytes += $size.Bytes

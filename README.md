@@ -158,6 +158,7 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
 | `delivery-optimization` | Windows Update, Microsoft Store, and Office downloads kept to share with other PCs | `Delete-DeliveryOptimizationCache -Force` | Low |
 | `defender` | Microsoft Defender Antivirus's non-critical files (`Support` and `LocalCopy` in `%ProgramData%\Microsoft\Windows Defender`) | Disk Cleanup's own item: `cleanmgr.exe /sagerun:<n>` | Low |
 | `error-reports` | Windows error reports and feedback diagnostics (`%ProgramData%\Microsoft\Windows\WER`) | Disk Cleanup's own item: `cleanmgr.exe /sagerun:<n>` | Low |
+| `memory-dumps` | Memory dumps from blue screens (`*.dmp` in `%WINDIR%`, such as `MEMORY.DMP`, and in `%WINDIR%\Minidump`) | Disk Cleanup's own items: `cleanmgr.exe /sagerun:<n>` | Low |
 | `edge-cache`, `edge-code-cache`, `edge-gpu-cache`, `edge-service-workers` | Parts of Microsoft Edge's caches, chosen separately (see [Browsers and apps](#browsers-and-apps)) | Resik deletes the folders' contents | Low; service workers Medium |
 | `edge-profile` | All Microsoft Edge data: history, cookies, saved passwords, extensions, settings | Resik deletes `User Data` after you confirm | High |
 | `ie-cache` | Internet Explorer's temporary internet files (`INetCache\IE`) | Resik deletes the cached files | Low |
@@ -227,8 +228,12 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
   For `defender`, virus definitions, the Defender engine, scan history, and
   quarantine are not touched; Defender removes old scan history and
   quarantined items itself. For `error-reports`, reports that were not sent
-  to Microsoft cannot be sent afterwards; system memory dumps and the Feedback
-  Hub archive are separate Disk Cleanup items and are kept.
+  to Microsoft cannot be sent afterwards; system memory dumps (`memory-dumps`)
+  and the Feedback Hub archive are separate Disk Cleanup items and are kept.
+- **memory-dumps:** runs Disk Cleanup's own items "System error memory dump
+  files" and "System error minidump files" the same way, needs administrator
+  rights, and is report-only without them. The dumps only help to find out why
+  Windows crashed.
 - **Temporary internet files and thumbnails** from Disk Cleanup are `ie-cache`
   and `thumbnails`, which Resik cleans itself without administrator rights.
   `C:\Windows\SoftwareDistribution\Download` and `Windows.old` are not touched.
@@ -544,10 +549,10 @@ src/Resik/
     Catalog.ps1           registered cleanup targets
   WindowsCleanup/         RecycleBin, ShaderCache, ThumbnailCache, Screenshots,
                           TempFiles, WindowsUpdate, WindowsLogs,
-                          DeliveryOptimization, DiskCleanup (runs one Disk
-                          Cleanup item), Defender, ErrorReports,
-                          Edge (edge-profile),
-                          InternetCache
+                          DeliveryOptimization, DiskCleanup (runs Disk
+                          Cleanup items), Defender, ErrorReports,
+                          MemoryDumps (memory-dumps),
+                          Edge (edge-profile), InternetCache
   AppCleanup/             AppCache (shared app cache helpers), Chromium
                           (browser parts and Electron/CEF apps), Zotero,
                           Nvidia

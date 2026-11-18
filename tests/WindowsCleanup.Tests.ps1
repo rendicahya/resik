@@ -521,6 +521,81 @@ Describe 'error-reports target' {
     }
 }
 
+Describe 'memory-dumps target' {
+    BeforeEach {
+        $script:windir = Join-Path $TestDrive ('Windows-' + [guid]::NewGuid().ToString('N'))
+        New-TestFile -Path (Join-Path $script:windir 'MEMORY.DMP') -Size 5000
+        New-TestFile -Path (Join-Path $script:windir 'setup.log') -Size 1
+        New-TestFile -Path (Join-Path $script:windir 'Minidump\111825-1.dmp') -Size 300
+        New-TestFile -Path (Join-Path $script:windir 'Minidump\notes.txt') -Size 2
+        New-TestFile -Path (Join-Path $script:windir 'System32\deep.dmp') -Size 70
+        New-TestFile -Path (Join-Path $TestDrive 'cleanmgr.exe')
+        $script:written = New-Object System.Collections.Generic.List[string]
+        $script:removed = New-Object System.Collections.Generic.List[string]
+        $script:cleanArgs = $null
+        $script:handlers = @(
+            [pscustomobject]@{ Name = 'Temporary Files'; Path = 'reg:temp'; Folder = ''; ValueNames = @() },
+            [pscustomobject]@{ Name = 'System error memory dump files'; Path = 'reg:dump'; Folder = $script:windir; ValueNames = @() },
+            [pscustomobject]@{ Name = 'System error minidump files'; Path = 'reg:mini'; Folder = (Join-Path $script:windir 'Minidump'); ValueNames = @() },
+            [pscustomobject]@{ Name = 'Previous Installations'; Path = 'reg:old'; Folder = ''; ValueNames = @() },
+            [pscustomobject]@{ Name = 'Temporary Setup Files'; Path = 'reg:setup'; Folder = ''; ValueNames = @() },
+            [pscustomobject]@{ Name = 'Windows Upgrade Log Files'; Path = 'reg:logs'; Folder = ''; ValueNames = @() }
+        )
+        Mock Write-Host {}
+        Mock Test-ResikAdministrator { $true }
+        Mock Get-ResikCleanMgrPath { Join-Path $TestDrive 'cleanmgr.exe' }
+        Mock Get-ResikMemoryDumpRoot { $script:windir }
+        Mock Get-ResikVolumeCacheHandler { $script:handlers }
+        Mock Set-ResikVolumeCacheStateFlag { $script:written.Add("$Path=$Value") }
+        Mock Remove-ResikVolumeCacheStateFlag { $script:removed.Add($Path) }
+        Mock Invoke-ResikNativeCommand {
+            $script:cleanArgs = $ArgumentList
+            Get-ChildItem -LiteralPath $script:windir -Filter '*.dmp' -File | Remove-Item
+            Get-ChildItem -LiteralPath (Join-Path $script:windir 'Minidump') -Filter '*.dmp' -File | Remove-Item
+            New-TestRunResult
+        }
+    }
+
+    It 'memory-dumps measures only the dump files directly in %WINDIR% and Minidump' {
+        $result = Invoke-ResikTargetAnalysis -Target (New-ResikMemoryDumpTarget)
+
+        $result.EstimatedBytes | Should -Be 5300
+        $result.Message | Should -BeLike '2 file(s) in *'
+        $script:written.Count | Should -Be 0
+    }
+
+    It 'memory-dumps selects both dump items and nothing else' {
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikMemoryDumpTarget)
+
+        $result.Status | Should -BeExactly 'Success'
+        $result.MeasuredBytes | Should -Be 5300
+        @($script:written) | Should -Be @('reg:temp=0', 'reg:dump=2', 'reg:mini=2', 'reg:old=0', 'reg:setup=0', 'reg:logs=0')
+        @($script:removed).Count | Should -Be 6
+        Join-Path $script:windir 'System32\deep.dmp' | Should -Exist
+    }
+
+    It 'memory-dumps reports nothing to clean without dump files' {
+        Remove-Item -LiteralPath (Join-Path $script:windir 'MEMORY.DMP'), (Join-Path $script:windir 'Minidump\111825-1.dmp')
+        $result = Invoke-ResikTargetAnalysis -Target (New-ResikMemoryDumpTarget)
+        $result.EstimatedBytes | Should -Be 0
+        $result.Message | Should -BeExactly 'There are no system memory dumps.'
+    }
+
+    It 'is detected when only one of several items exists, and runs that one' {
+        $script:handlers = @($script:handlers | Where-Object { $_.Name -ne 'System error minidump files' })
+        (Invoke-ResikTargetAnalysis -Target (New-ResikMemoryDumpTarget)).Status | Should -BeExactly 'AnalysisOnly'
+        $null = Invoke-ResikTargetCleanup -Target (New-ResikMemoryDumpTarget)
+        @($script:written | Where-Object { $_ -like '*=2' }) | Should -Be @('reg:dump=2')
+    }
+
+    It 'is report-only without administrator rights' {
+        Mock Test-ResikAdministrator { $false }
+        $target = New-ResikMemoryDumpTarget
+        $target.Clean | Should -BeNullOrEmpty
+        (Invoke-ResikTargetAnalysis -Target $target).Message | Should -BeLike 'Needs administrator rights*'
+    }
+}
+
 Describe 'delivery-optimization target' {
     BeforeAll {
         function New-TestDoFile {

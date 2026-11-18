@@ -18,6 +18,7 @@ function Get-ResikTargetCatalog {
     New-ResikDeliveryOptimizationTarget
     New-ResikDefenderTarget
     New-ResikErrorReportTarget
+    New-ResikMemoryDumpTarget
     New-ResikChromiumBrowserTarget -BrowserId 'edge'
     New-ResikEdgeProfileTarget
     New-ResikInternetCacheTarget
