@@ -320,6 +320,9 @@ Describe 'Format-ResikPickerScreen' {
 Describe 'Format-ResikPickerScreen in a short window' {
     BeforeAll {
         function New-TestLongState {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+                Justification = 'Creates an in-memory object only.')]
+            param()
             $targets = @()
             $analysis = @()
             for ($index = 1; $index -le 30; $index++) {
