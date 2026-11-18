@@ -635,6 +635,46 @@ Describe 'Disk Cleanup targets with several items or their own paths' {
     }
 }
 
+Describe 'crash-dumps target' {
+    BeforeEach {
+        $script:local = Join-Path $TestDrive ('local-' + [guid]::NewGuid().ToString('N'))
+        $script:dumps = Join-Path $script:local 'CrashDumps'
+        New-TestFile -Path (Join-Path $script:dumps 'app.exe.1234.dmp') -Size 800
+        New-TestFile -Path (Join-Path $script:dumps 'other.exe.9.dmp') -Size 200
+        New-TestFile -Path (Join-Path $script:dumps 'readme.txt') -Size 3
+        Mock Write-Host {}
+        Mock Get-ResikLocalAppDataPath { $script:local }
+    }
+
+    It 'measures and deletes only the .dmp files, without administrator rights' {
+        Mock Test-ResikAdministrator { $false }
+        $target = New-ResikCrashDumpTarget
+        (Invoke-ResikTargetAnalysis -Target $target).EstimatedBytes | Should -Be 1000
+
+        $result = Invoke-ResikTargetCleanup -Target $target
+        $result.Status | Should -BeExactly 'Success'
+        $result.MeasuredBytes | Should -Be 1000
+        Join-Path $script:dumps 'readme.txt' | Should -Exist
+        @(Get-ChildItem -LiteralPath $script:dumps -Filter '*.dmp').Count | Should -Be 0
+    }
+
+    It 'is not detected without a CrashDumps folder' {
+        Remove-Item -LiteralPath $script:dumps -Recurse
+        (Invoke-ResikTargetAnalysis -Target (New-ResikCrashDumpTarget)).Message | Should -BeLike 'Not detected: *'
+    }
+
+    It 'refuses a CrashDumps folder that is a junction' {
+        Remove-Item -LiteralPath $script:dumps -Recurse
+        $elsewhere = Join-Path $TestDrive ('elsewhere-' + [guid]::NewGuid().ToString('N'))
+        New-TestFile -Path (Join-Path $elsewhere 'precious.dmp') -Size 50
+        New-Item -ItemType Junction -Path $script:dumps -Value $elsewhere | Out-Null
+
+        (Invoke-ResikTargetCleanup -Target (New-ResikCrashDumpTarget)).Message | Should -BeLike 'Cleanup failed: Refusing to clean app crash dumps: *junction*'
+        Join-Path $elsewhere 'precious.dmp' | Should -Exist
+        [System.IO.Directory]::Delete($script:dumps)
+    }
+}
+
 Describe 'delivery-optimization target' {
     BeforeAll {
         function New-TestDoFile {

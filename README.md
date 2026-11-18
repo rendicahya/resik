@@ -159,6 +159,7 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
 | `defender` | Microsoft Defender Antivirus's non-critical files (`Support` and `LocalCopy` in `%ProgramData%\Microsoft\Windows Defender`) | Disk Cleanup's own item: `cleanmgr.exe /sagerun:<n>` | Low |
 | `error-reports` | Windows error reports and feedback diagnostics (`%ProgramData%\Microsoft\Windows\WER`) | Disk Cleanup's own item: `cleanmgr.exe /sagerun:<n>` | Low |
 | `memory-dumps` | Memory dumps from blue screens (`*.dmp` in `%WINDIR%`, such as `MEMORY.DMP`, and in `%WINDIR%\Minidump`) | Disk Cleanup's own items: `cleanmgr.exe /sagerun:<n>` | Low |
+| `crash-dumps` | App crash dumps Windows Error Reporting saved (`*.dmp` in `%LOCALAPPDATA%\CrashDumps`) | Resik deletes the dump files | Low |
 | `windows-setup-files` | Temporary Windows installation files and Windows upgrade logs | Disk Cleanup's own items: `cleanmgr.exe /sagerun:<n>` | Low |
 | `windows-old` | The previous Windows installation (`Windows.old`) | Disk Cleanup's own item: `cleanmgr.exe /sagerun:<n>` | High |
 | `edge-cache`, `edge-code-cache`, `edge-gpu-cache`, `edge-service-workers` | Parts of Microsoft Edge's caches, chosen separately (see [Browsers and apps](#browsers-and-apps)) | Resik deletes the folders' contents | Low; service workers Medium |
@@ -245,6 +246,10 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
   files still in `Windows.old` are deleted, so `--all` and "select all" never
   choose it; name it with `--only windows-old` or select it yourself. The size
   is that of `%SystemDrive%\Windows.old`; measuring it can take a while.
+- **crash-dumps:** needs no administrator rights. `%LOCALAPPDATA%\CrashDumps`
+  is Windows Error Reporting's default folder for app crash dumps; Resik
+  deletes only the `*.dmp` files directly in it. A dump folder set elsewhere in
+  the registry (`LocalDumps\DumpFolder`) is not cleaned.
 - **Temporary internet files and thumbnails** from Disk Cleanup are `ie-cache`
   and `thumbnails`, which Resik cleans itself without administrator rights.
   `C:\Windows\SoftwareDistribution\Download` is not touched.
@@ -562,7 +567,7 @@ src/Resik/
                           TempFiles, WindowsUpdate, WindowsLogs,
                           DeliveryOptimization, DiskCleanup (runs Disk
                           Cleanup items), Defender, ErrorReports,
-                          MemoryDumps (memory-dumps),
+                          MemoryDumps (memory-dumps, crash-dumps),
                           WindowsSetup (windows-setup-files, windows-old),
                           Edge (edge-profile), InternetCache
   AppCleanup/             AppCache (shared app cache helpers), Chromium

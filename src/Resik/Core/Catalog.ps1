@@ -19,6 +19,7 @@ function Get-ResikTargetCatalog {
     New-ResikDefenderTarget
     New-ResikErrorReportTarget
     New-ResikMemoryDumpTarget
+    New-ResikCrashDumpTarget
     New-ResikWindowsSetupTarget
     New-ResikPreviousWindowsTarget
     New-ResikChromiumBrowserTarget -BrowserId 'edge'
