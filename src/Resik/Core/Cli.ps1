@@ -6,7 +6,7 @@
 #   2  Invalid or unsupported command-line usage.
 
 function Get-ResikVersion {
-    '0.11.0'
+    '0.12.0'
 }
 
 function Get-ResikHelpText {
