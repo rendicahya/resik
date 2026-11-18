@@ -125,6 +125,28 @@ Describe 'Format-ResikSummary' {
         )
     }
 
+    It 'lists a ListFirst target first in its section even without a size' {
+        $targets = @(
+            (New-TestTarget -Id 'big' -Clean $script:clean),
+            (New-TestTarget -Id 'update' -Clean $script:clean -ListFirst),
+            (New-TestTarget -Id 'report-a'),
+            (New-TestTarget -Id 'report-b' -ListFirst)
+        )
+        $results = @(
+            (New-ResikResult -TargetId 'big' -Operation Analyze -Status AnalysisOnly -EstimatedBytes 4096),
+            (New-ResikResult -TargetId 'update' -Operation Analyze -Status AnalysisOnly),
+            (New-ResikResult -TargetId 'report-a' -Operation Analyze -Status AnalysisOnly -EstimatedBytes 1024 -Message 'a'),
+            (New-ResikResult -TargetId 'report-b' -Operation Analyze -Status AnalysisOnly -Message 'b')
+        )
+
+        $lines = @(Format-ResikSummary -Results $results -Targets $targets)
+
+        $lines[1] | Should -BeLike '  update *'
+        $lines[2] | Should -BeLike '  big *'
+        $lines[5] | Should -BeLike '  report-b *'
+        $lines[6] | Should -BeLike '  report-a *'
+    }
+
     It 'names missing tools once with ShowNotFound' {
         $targets = @((New-TestTarget -Id 'small' -Clean $script:clean), (New-TestTarget -Id 'a-long-missing-id' -Clean $script:clean))
         $results = @(

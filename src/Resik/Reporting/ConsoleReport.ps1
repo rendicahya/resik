@@ -190,23 +190,29 @@ function Format-ResikSummary {
         return 'No results.'
     }
 
+    $index = 0
     $entries = foreach ($result in $Results) {
+        $index++
         $target = $Targets | Where-Object { $_.Id -eq $result.TargetId } | Select-Object -First 1
         [pscustomobject]@{
+            Index   = $index
             Id      = $result.TargetId
             Bytes   = $result.EstimatedBytes
             Size    = $(if ($null -eq $result.EstimatedBytes) { '?' } else { Format-ResikSize $result.EstimatedBytes })
             Status  = "$($result.Status)"
             Message = ConvertTo-ResikDisplayText $result.Message
             Group   = Get-ResikAnalysisGroup -Result $result -Target $target
+            First   = $null -ne $target -and [bool](Get-ResikOptionalProperty $target 'ListFirst')
         }
     }
     $entries = @($entries)
 
-    # Known sizes first, largest first; unknown sizes last.
+    # ListFirst targets first; then known sizes, largest first; unknown sizes
+    # last.
+    $first = @{ Expression = { $_.First }; Descending = $true }
     $ready = @($entries | Where-Object { $_.Group -eq 'Ready' } |
-            Sort-Object -Property @{ Expression = { $null -eq $_.Bytes } }, @{ Expression = { $_.Bytes }; Descending = $true })
-    $reportOnly = @($entries | Where-Object { $_.Group -eq 'ReportOnly' })
+            Sort-Object -Property $first, @{ Expression = { $null -eq $_.Bytes } }, @{ Expression = { $_.Bytes }; Descending = $true }, Index)
+    $reportOnly = @($entries | Where-Object { $_.Group -eq 'ReportOnly' } | Sort-Object -Property $first, Index)
     $skipped = @($entries | Where-Object { $_.Group -eq 'Skipped' })
     $problems = @($entries | Where-Object { $_.Group -eq 'Problem' })
     $notFound = @($entries | Where-Object { $_.Group -eq 'NotFound' })

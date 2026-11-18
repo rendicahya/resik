@@ -54,6 +54,22 @@ Describe 'Picker groups' {
         @($state.Rows | ForEach-Object { $_.Indent }) | Should -Be @(0, 1, 1, 1, 0, 0)
     }
 
+    It 'puts a ListFirst target first among the cleanable ones, even without a size' {
+        $clean = { [pscustomobject]@{ Status = 'Success' } }
+        $targets = @(
+            (New-TestTarget -Id 'big' -Clean $clean),
+            (New-TestTarget -Id 'update' -Clean $clean -ListFirst),
+            (New-TestTarget -Id 'report' -ListFirst)
+        )
+        $analysis = @(
+            (New-ResikResult -TargetId 'big' -Operation Analyze -Status AnalysisOnly -EstimatedBytes 4096),
+            (New-ResikResult -TargetId 'update' -Operation Analyze -Status AnalysisOnly),
+            (New-ResikResult -TargetId 'report' -Operation Analyze -Status AnalysisOnly -EstimatedBytes 8192)
+        )
+        $state = New-ResikPickerState -Targets $targets -Analysis $analysis
+        @($state.Items | ForEach-Object { $_.Target.Id }) | Should -Be @('update', 'big', 'report')
+    }
+
     It 'shows a group of one target as a plain row' {
         $target = New-TestTarget -Id 'x' -Clean { } -Group 'X'
         $analysis = New-ResikResult -TargetId 'x' -Operation Analyze -Status AnalysisOnly

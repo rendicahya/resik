@@ -97,8 +97,10 @@ function New-TestTarget {
         [scriptblock] $Clean = $null,
         [string] $RiskLevel = 'Low',
         [string] $Group = '',
-        [switch] $ExplicitOnly
+        [switch] $ExplicitOnly,
+        [switch] $ListFirst
     )
     New-ResikTarget -Id $Id -Name "Fake $Id" -Category Developer -RiskLevel $RiskLevel `
-        -Description 'Test target' -Detect $Detect -Analyze $Analyze -Clean $Clean -Group $Group -ExplicitOnly:$ExplicitOnly
+        -Description 'Test target' -Detect $Detect -Analyze $Analyze -Clean $Clean -Group $Group -ExplicitOnly:$ExplicitOnly `
+        -ListFirst:$ListFirst
 }

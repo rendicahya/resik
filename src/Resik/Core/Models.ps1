@@ -68,7 +68,12 @@ function New-ResikTarget {
 
         # Targets with the same Group (such as the parts of one browser) are
         # shown together under that heading in the picker.
-        [string] $Group = ''
+        [string] $Group = '',
+
+        # ListFirst targets (windows-update, which often frees the most space
+        # but cannot estimate it) are listed first in their section of the
+        # report and the picker instead of among the unknown sizes at the end.
+        [switch] $ListFirst
     )
 
     [pscustomobject]@{
@@ -83,6 +88,7 @@ function New-ResikTarget {
         Clean        = $Clean
         ExplicitOnly = [bool]$ExplicitOnly
         Group        = $Group
+        ListFirst    = [bool]$ListFirst
     }
 }
 

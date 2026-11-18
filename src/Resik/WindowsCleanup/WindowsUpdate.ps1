@@ -85,5 +85,5 @@ function New-ResikWindowsUpdateTarget {
             'uninstalled. Needs administrator rights.') `
         -Detect { Invoke-ResikWindowsUpdateDetection } `
         -Analyze { Invoke-ResikWindowsUpdateAnalysis } `
-        -Clean $clean
+        -Clean $clean -ListFirst
 }

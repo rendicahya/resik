@@ -49,8 +49,8 @@ function New-ResikPickerState {
         [object[]] $Analysis = @()
     )
 
-    # Cleanable targets come first, largest first. Tools that are not
-    # installed are left out.
+    # Cleanable targets come first, largest first, after ListFirst targets.
+    # Tools that are not installed are left out.
     $items = New-Object System.Collections.Generic.List[object]
     $order = 0
     foreach ($target in $Targets) {
@@ -83,6 +83,7 @@ function New-ResikPickerState {
                 Details        = $details
                 EstimatedBytes = $estimate
                 Rank           = @{ Ready = 0; ReportOnly = 1; Skipped = 2; Problem = 3 }[$group]
+                ListFirst      = [bool](Get-ResikOptionalProperty $target 'ListFirst')
                 Order          = $order
             })
     }
@@ -110,10 +111,12 @@ function New-ResikPickerState {
         }
         $entry | Add-Member -NotePropertyName Rank -NotePropertyValue (($entry.Members | Measure-Object -Property Rank -Minimum).Minimum)
         $entry | Add-Member -NotePropertyName EstimatedBytes -NotePropertyValue $total
+        $entry | Add-Member -NotePropertyName ListFirst -NotePropertyValue (@($entry.Members | Where-Object { $_.ListFirst }).Count -gt 0)
         $entry | Add-Member -NotePropertyName Order -NotePropertyValue (($entry.Members | Measure-Object -Property Order -Minimum).Minimum)
     }
 
     $sorted = @($entries | Sort-Object -Property Rank,
+        @{ Expression = { $_.ListFirst }; Descending = $true },
         @{ Expression = { $null -eq $_.EstimatedBytes } },
         @{ Expression = { $_.EstimatedBytes }; Descending = $true },
         Order)
