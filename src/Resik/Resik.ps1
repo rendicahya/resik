@@ -23,6 +23,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'WindowsCleanup\Screenshots.ps1')
 . (Join-Path $PSScriptRoot 'WindowsCleanup\WindowsUpdate.ps1')
 . (Join-Path $PSScriptRoot 'WindowsCleanup\DeliveryOptimization.ps1')
+. (Join-Path $PSScriptRoot 'WindowsCleanup\Defender.ps1')
 . (Join-Path $PSScriptRoot 'WindowsCleanup\Edge.ps1')
 . (Join-Path $PSScriptRoot 'WindowsCleanup\InternetCache.ps1')
 . (Join-Path $PSScriptRoot 'WindowsCleanup\TempFiles.ps1')

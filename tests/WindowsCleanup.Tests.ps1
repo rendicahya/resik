@@ -348,6 +348,114 @@ Describe 'windows-update target' {
     }
 }
 
+Describe 'defender target' {
+    BeforeEach {
+        $script:root = Join-Path $TestDrive 'Defender'
+        $script:support = Join-Path $script:root 'Support'
+        $script:outside = Join-Path $TestDrive 'Elsewhere'
+        New-TestFile -Path (Join-Path $script:support 'MPLog-1.log') -Size 3000
+        New-TestFile -Path (Join-Path $script:outside 'keep.txt') -Size 10
+        New-TestFile -Path (Join-Path $TestDrive 'cleanmgr.exe')
+        $script:written = New-Object System.Collections.Generic.List[string]
+        $script:removed = New-Object System.Collections.Generic.List[string]
+        $script:cleanArgs = $null
+        $script:handlers = @(
+            [pscustomobject]@{ Name = 'Temporary Files'; Path = 'reg:temp'; Folder = ''; ValueNames = @('StateFlags6100') },
+            [pscustomobject]@{
+                Name       = 'Windows Defender'; Path = 'reg:defender'; ValueNames = @()
+                Folder     = "$(Join-Path $script:root 'LocalCopy')|$script:support|$script:outside"
+            }
+        )
+        Mock Write-Host {}
+        Mock Get-ResikCleanMgrPath { Join-Path $TestDrive 'cleanmgr.exe' }
+        Mock Get-ResikDefenderDataRoot { $script:root }
+        Mock Get-ResikVolumeCacheHandler { $script:handlers }
+        Mock Set-ResikVolumeCacheStateFlag { $script:written.Add("$Path=$Value@$Slot") }
+        Mock Remove-ResikVolumeCacheStateFlag { $script:removed.Add("$Path@$Slot") }
+        Mock Invoke-ResikNativeCommand {
+            $script:cleanArgs = $ArgumentList
+            Remove-Item -LiteralPath (Join-Path $script:support 'MPLog-1.log')
+            New-TestRunResult
+        }
+    }
+
+    It 'is report-only without administrator rights' {
+        Mock Test-ResikAdministrator { $false }
+        $target = New-ResikDefenderTarget
+
+        $target.Clean | Should -BeNullOrEmpty
+        $result = Invoke-ResikTargetAnalysis -Target $target
+        $result.Status | Should -BeExactly 'AnalysisOnly'
+        $result.Message | Should -BeLike 'Needs administrator rights*'
+        (Get-ResikAnalysisGroup -Result $result -Target $target) | Should -BeExactly 'ReportOnly'
+    }
+
+    It 'is not found when Disk Cleanup has no Defender item' {
+        $script:handlers = @($script:handlers[0])
+        (Invoke-ResikDefenderDetection).Available | Should -BeFalse
+    }
+
+    It 'measures only real folders inside Defender''s data folder, and changes nothing' {
+        Mock Test-ResikAdministrator { $true }
+        @(Get-ResikDefenderFolder -Handler $script:handlers[1]) | Should -Be @($script:support)
+
+        $result = Invoke-ResikTargetAnalysis -Target (New-ResikDefenderTarget)
+        $result.EstimatedBytes | Should -Be 3000
+        $script:written.Count | Should -Be 0
+        $script:cleanArgs | Should -BeNullOrEmpty
+    }
+
+    It 'uses a slot no Disk Cleanup item has' {
+        Get-ResikFreeCleanupSlot -Handler $script:handlers | Should -Be 6101
+        $full = [pscustomobject]@{ ValueNames = @(6100..6199 | ForEach-Object { Get-ResikCleanupSlotName $_ }) }
+        Get-ResikFreeCleanupSlot -Handler @($full) | Should -BeNullOrEmpty
+    }
+
+    It 'selects only the Defender item, runs its slot, and removes every value it wrote' {
+        Mock Test-ResikAdministrator { $true }
+
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikDefenderTarget)
+
+        $result.Status | Should -BeExactly 'Success'
+        $result.MeasuredBytes | Should -Be 3000
+        @($script:written) | Should -Be @('reg:temp=0@6101', 'reg:defender=2@6101')
+        $script:cleanArgs | Should -Be @('/sagerun:6101')
+        @($script:removed) | Should -Be @('reg:temp@6101', 'reg:defender@6101')
+    }
+
+    It 'removes the values it wrote when Disk Cleanup cannot run' {
+        Mock Test-ResikAdministrator { $true }
+        Mock Invoke-ResikNativeCommand { throw 'boom' }
+
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikDefenderTarget)
+
+        $result.Status | Should -BeExactly 'Failed'
+        @($script:removed) | Should -Be @('reg:temp@6101', 'reg:defender@6101')
+    }
+
+    It 'removes only what it wrote when writing a value fails' {
+        Mock Test-ResikAdministrator { $true }
+        Mock Set-ResikVolumeCacheStateFlag {
+            if ($Path -eq 'reg:defender') { throw 'denied' }
+            $script:written.Add("$Path=$Value@$Slot")
+        }
+
+        (Invoke-ResikTargetCleanup -Target (New-ResikDefenderTarget)).Status | Should -BeExactly 'Failed'
+        $script:cleanArgs | Should -BeNullOrEmpty
+        @($script:removed) | Should -Be @('reg:temp@6101')
+    }
+
+    It 'changes nothing if administrator rights are gone' {
+        Mock Test-ResikAdministrator { $true }
+        $target = New-ResikDefenderTarget
+        Mock Test-ResikAdministrator { $false }
+
+        (Invoke-ResikTargetCleanup -Target $target).Status | Should -BeExactly 'Skipped'
+        $script:written.Count | Should -Be 0
+        $script:cleanArgs | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'delivery-optimization target' {
     BeforeAll {
         function New-TestDoFile {

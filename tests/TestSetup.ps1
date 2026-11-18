@@ -21,6 +21,7 @@ $resikSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'src\Resik'
 . (Join-Path $resikSource 'WindowsCleanup\Screenshots.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\WindowsUpdate.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\DeliveryOptimization.ps1')
+. (Join-Path $resikSource 'WindowsCleanup\Defender.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\Edge.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\InternetCache.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\TempFiles.ps1')
@@ -65,6 +66,19 @@ function Test-ResikSpinnerSupported { $false }
 # Likewise, never change the real console's input mode; the picker then reads
 # keys only. TargetPicker.Tests.ps1 mocks this to test mouse clicks.
 function Enable-ResikPickerMouse { $null }
+
+# Tests must never write Disk Cleanup's registry values; tests of the
+# defender target mock these.
+function Set-ResikVolumeCacheStateFlag {
+    [CmdletBinding(SupportsShouldProcess)]
+    param([string] $Path, [int] $Slot, [int] $Value)
+    if ($PSCmdlet.ShouldProcess("$Path $Slot", "Set to $Value")) { throw 'Tests must mock Set-ResikVolumeCacheStateFlag.' }
+}
+function Remove-ResikVolumeCacheStateFlag {
+    [CmdletBinding(SupportsShouldProcess)]
+    param([string] $Path, [int] $Slot)
+    if ($PSCmdlet.ShouldProcess("$Path $Slot", 'Remove')) { throw 'Tests must mock Remove-ResikVolumeCacheStateFlag.' }
+}
 
 function New-TestRunResult {
     # A fake Invoke-ResikNativeCommand result, for mocks.
