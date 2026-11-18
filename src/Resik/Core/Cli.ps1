@@ -56,7 +56,8 @@ scoop-persist, and jetbrains-leftovers ask before deleting, even with --force
 (unless you answered a), and remove nothing without a terminal.
 Browser, app, and IDE targets ask to close the browser or app when it is
 running, even after a; without a terminal they are skipped.
-windows-update, windows-logs, and defender need administrator rights, and temp-files
+windows-update, windows-logs, defender, and error-reports need administrator
+rights, and temp-files
 includes %WINDIR%\Temp only with them; Resik never elevates itself.
 "@
 }

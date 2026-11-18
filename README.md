@@ -157,6 +157,7 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
 | `windows-logs` | Rotated CBS logs, and DISM and Windows Update logs older than 7 days, in `%WINDIR%\Logs` | Resik deletes the old logs | Low |
 | `delivery-optimization` | Windows Update, Microsoft Store, and Office downloads kept to share with other PCs | `Delete-DeliveryOptimizationCache -Force` | Low |
 | `defender` | Microsoft Defender Antivirus's non-critical files (`Support` and `LocalCopy` in `%ProgramData%\Microsoft\Windows Defender`) | Disk Cleanup's own item: `cleanmgr.exe /sagerun:<n>` | Low |
+| `error-reports` | Windows error reports and feedback diagnostics (`%ProgramData%\Microsoft\Windows\WER`) | Disk Cleanup's own item: `cleanmgr.exe /sagerun:<n>` | Low |
 | `edge-cache`, `edge-code-cache`, `edge-gpu-cache`, `edge-service-workers` | Parts of Microsoft Edge's caches, chosen separately (see [Browsers and apps](#browsers-and-apps)) | Resik deletes the folders' contents | Low; service workers Medium |
 | `edge-profile` | All Microsoft Edge data: history, cookies, saved passwords, extensions, settings | Resik deletes `User Data` after you confirm | High |
 | `ie-cache` | Internet Explorer's temporary internet files (`INetCache\IE`) | Resik deletes the cached files | Low |
@@ -213,17 +214,23 @@ With `--dry-run`, only steps 1 and 2 happen, and nothing is changed.
   nothing is deleted while a file is still downloading, so an update in
   progress is not interrupted. Windows downloads the files again if it needs
   them; until then, other PCs on your network cannot get them from yours.
-- **defender:** needs administrator rights; without them it is report-only.
-  Defender protects its own folders and has no command for this, so Resik runs
-  Disk Cleanup's "Microsoft Defender Antivirus" item, which deletes the files
-  in the folders that item names. To run only that item, Resik picks a
+- **defender, error-reports:** need administrator rights; without them they
+  are report-only. Resik runs Disk Cleanup's own item ("Microsoft Defender
+  Antivirus", and "Windows error reports and feedback diagnostics"), which
+  deletes the files in the folders that item names; Defender protects its own
+  folders and has no command for this. To run only that item, Resik picks a
   Disk Cleanup slot from 6100 to 6199 that nothing uses, marks Defender as
   selected and every other item as not selected in the registry
   (`StateFlags<n>` under `HKLM\...\Explorer\VolumeCaches`), runs
   `cleanmgr.exe /sagerun:<n>`, and then removes every value it wrote, even if
   cleanup fails. Disk Cleanup shows a small progress window while it runs.
-  Virus definitions, the Defender engine, scan history, and quarantine are not
-  touched; Defender removes old scan history and quarantined items itself.
+  For `defender`, virus definitions, the Defender engine, scan history, and
+  quarantine are not touched; Defender removes old scan history and
+  quarantined items itself. For `error-reports`, reports that were not sent
+  to Microsoft cannot be sent afterwards; system memory dumps and the Feedback
+  Hub archive are separate Disk Cleanup items and are kept.
+- **Temporary internet files and thumbnails** from Disk Cleanup are `ie-cache`
+  and `thumbnails`, which Resik cleans itself without administrator rights.
   `C:\Windows\SoftwareDistribution\Download` and `Windows.old` are not touched.
 - **edge-profile:** for people who don't use Edge. Edge has no command for
   clearing its data, so Resik deletes files itself, only in
@@ -535,7 +542,9 @@ src/Resik/
     Catalog.ps1           registered cleanup targets
   WindowsCleanup/         RecycleBin, ShaderCache, ThumbnailCache, Screenshots,
                           TempFiles, WindowsUpdate, WindowsLogs,
-                          DeliveryOptimization, Defender, Edge (edge-profile),
+                          DeliveryOptimization, DiskCleanup (runs one Disk
+                          Cleanup item), Defender, ErrorReports,
+                          Edge (edge-profile),
                           InternetCache
   AppCleanup/             AppCache (shared app cache helpers), Chromium
                           (browser parts and Electron/CEF apps), Zotero,

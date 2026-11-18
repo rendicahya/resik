@@ -397,7 +397,7 @@ Describe 'defender target' {
 
     It 'measures only real folders inside Defender''s data folder, and changes nothing' {
         Mock Test-ResikAdministrator { $true }
-        @(Get-ResikDefenderFolder -Handler $script:handlers[1]) | Should -Be @($script:support)
+        @(Get-ResikDiskCleanupFolder -Handler $script:handlers[1] -Root $script:root) | Should -Be @($script:support)
 
         $result = Invoke-ResikTargetAnalysis -Target (New-ResikDefenderTarget)
         $result.EstimatedBytes | Should -Be 3000
@@ -453,6 +453,71 @@ Describe 'defender target' {
         (Invoke-ResikTargetCleanup -Target $target).Status | Should -BeExactly 'Skipped'
         $script:written.Count | Should -Be 0
         $script:cleanArgs | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'error-reports target' {
+    BeforeEach {
+        $script:wer = Join-Path $TestDrive 'WER'
+        New-TestFile -Path (Join-Path $script:wer 'ReportArchive\AppCrash_1\Report.wer') -Size 2000
+        New-TestFile -Path (Join-Path $TestDrive 'cleanmgr.exe')
+        $script:written = New-Object System.Collections.Generic.List[string]
+        $script:removed = New-Object System.Collections.Generic.List[string]
+        $script:cleanArgs = $null
+        $script:handlers = @(
+            [pscustomobject]@{ Name = 'Windows Defender'; Path = 'reg:defender'; Folder = ''; ValueNames = @() },
+            [pscustomobject]@{ Name = 'Windows Error Reporting Files'; Path = 'reg:wer'; Folder = "$script:wer\"; ValueNames = @() }
+        )
+        Mock Write-Host {}
+        Mock Get-ResikCleanMgrPath { Join-Path $TestDrive 'cleanmgr.exe' }
+        Mock Get-ResikErrorReportRoot { $script:wer }
+        Mock Get-ResikVolumeCacheHandler { $script:handlers }
+        Mock Set-ResikVolumeCacheStateFlag { $script:written.Add("$Path=$Value@$Slot") }
+        Mock Remove-ResikVolumeCacheStateFlag { $script:removed.Add("$Path@$Slot") }
+        Mock Invoke-ResikNativeCommand {
+            $script:cleanArgs = $ArgumentList
+            Remove-Item -LiteralPath (Join-Path $script:wer 'ReportArchive') -Recurse
+            New-TestRunResult
+        }
+    }
+
+    It 'is report-only without administrator rights' {
+        Mock Test-ResikAdministrator { $false }
+        $target = New-ResikErrorReportTarget
+
+        $target.Clean | Should -BeNullOrEmpty
+        $result = Invoke-ResikTargetAnalysis -Target $target
+        $result.Message | Should -BeLike 'Needs administrator rights*'
+        (Get-ResikAnalysisGroup -Result $result -Target $target) | Should -BeExactly 'ReportOnly'
+    }
+
+    It 'measures the WER folder during analysis and changes nothing' {
+        Mock Test-ResikAdministrator { $true }
+
+        $result = Invoke-ResikTargetAnalysis -Target (New-ResikErrorReportTarget)
+
+        $result.EstimatedBytes | Should -Be 2000
+        $script:written.Count | Should -Be 0
+        $script:cleanArgs | Should -BeNullOrEmpty
+    }
+
+    It 'selects only the error reporting item and removes every value it wrote' {
+        Mock Test-ResikAdministrator { $true }
+
+        $result = Invoke-ResikTargetCleanup -Target (New-ResikErrorReportTarget)
+
+        $result.Status | Should -BeExactly 'Success'
+        $result.MeasuredBytes | Should -Be 2000
+        @($script:written) | Should -Be @('reg:defender=0@6100', 'reg:wer=2@6100')
+        $script:cleanArgs | Should -Be @('/sagerun:6100')
+        @($script:removed) | Should -Be @('reg:defender@6100', 'reg:wer@6100')
+    }
+
+    It 'is not found when Disk Cleanup has no error reporting item' {
+        $script:handlers = @($script:handlers[0])
+        $detection = Invoke-ResikDiskCleanupDetection -Name (Get-ResikErrorReportHandlerName) -Label (Get-ResikErrorReportLabel)
+        $detection.Available | Should -BeFalse
+        $detection.Details | Should -BeExactly 'Disk Cleanup has no Windows error reports and feedback diagnostics item.'
     }
 }
 

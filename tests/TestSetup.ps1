@@ -21,7 +21,9 @@ $resikSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'src\Resik'
 . (Join-Path $resikSource 'WindowsCleanup\Screenshots.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\WindowsUpdate.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\DeliveryOptimization.ps1')
+. (Join-Path $resikSource 'WindowsCleanup\DiskCleanup.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\Defender.ps1')
+. (Join-Path $resikSource 'WindowsCleanup\ErrorReports.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\Edge.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\InternetCache.ps1')
 . (Join-Path $resikSource 'WindowsCleanup\TempFiles.ps1')
@@ -68,7 +70,7 @@ function Test-ResikSpinnerSupported { $false }
 function Enable-ResikPickerMouse { $null }
 
 # Tests must never write Disk Cleanup's registry values; tests of the
-# defender target mock these.
+# Disk Cleanup targets (defender, error-reports) mock these.
 function Set-ResikVolumeCacheStateFlag {
     [CmdletBinding(SupportsShouldProcess)]
     param([string] $Path, [int] $Slot, [int] $Value)
