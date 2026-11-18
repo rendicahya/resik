@@ -521,14 +521,16 @@ Describe 'error-reports target' {
     }
 }
 
-Describe 'memory-dumps target' {
+Describe 'Disk Cleanup targets with several items or their own paths' {
     BeforeEach {
         $script:windir = Join-Path $TestDrive ('Windows-' + [guid]::NewGuid().ToString('N'))
+        $script:old = Join-Path $TestDrive ('drive-' + [guid]::NewGuid().ToString('N') + '\Windows.old')
         New-TestFile -Path (Join-Path $script:windir 'MEMORY.DMP') -Size 5000
         New-TestFile -Path (Join-Path $script:windir 'setup.log') -Size 1
         New-TestFile -Path (Join-Path $script:windir 'Minidump\111825-1.dmp') -Size 300
         New-TestFile -Path (Join-Path $script:windir 'Minidump\notes.txt') -Size 2
         New-TestFile -Path (Join-Path $script:windir 'System32\deep.dmp') -Size 70
+        New-TestFile -Path (Join-Path $script:old 'Windows\System32\a.dll') -Size 9000
         New-TestFile -Path (Join-Path $TestDrive 'cleanmgr.exe')
         $script:written = New-Object System.Collections.Generic.List[string]
         $script:removed = New-Object System.Collections.Generic.List[string]
@@ -545,6 +547,7 @@ Describe 'memory-dumps target' {
         Mock Test-ResikAdministrator { $true }
         Mock Get-ResikCleanMgrPath { Join-Path $TestDrive 'cleanmgr.exe' }
         Mock Get-ResikMemoryDumpRoot { $script:windir }
+        Mock Get-ResikPreviousWindowsPath { $script:old }
         Mock Get-ResikVolumeCacheHandler { $script:handlers }
         Mock Set-ResikVolumeCacheStateFlag { $script:written.Add("$Path=$Value") }
         Mock Remove-ResikVolumeCacheStateFlag { $script:removed.Add($Path) }
@@ -552,6 +555,7 @@ Describe 'memory-dumps target' {
             $script:cleanArgs = $ArgumentList
             Get-ChildItem -LiteralPath $script:windir -Filter '*.dmp' -File | Remove-Item
             Get-ChildItem -LiteralPath (Join-Path $script:windir 'Minidump') -Filter '*.dmp' -File | Remove-Item
+            if (Test-Path -LiteralPath $script:old) { Remove-Item -LiteralPath $script:old -Recurse -Force }
             New-TestRunResult
         }
     }
@@ -581,6 +585,40 @@ Describe 'memory-dumps target' {
         $result.Message | Should -BeExactly 'There are no system memory dumps.'
     }
 
+    It 'windows-old is High risk, explicit-only, and measures Windows.old' {
+        $target = New-ResikPreviousWindowsTarget
+        $target.RiskLevel | Should -BeExactly 'High'
+        $target.ExplicitOnly | Should -BeTrue
+        (Invoke-ResikTargetAnalysis -Target $target).EstimatedBytes | Should -Be 9000
+
+        $result = Invoke-ResikTargetCleanup -Target $target
+        $result.MeasuredBytes | Should -Be 9000
+        @($script:written | Where-Object { $_ -like '*=2' }) | Should -Be @('reg:old=2')
+    }
+
+    It 'windows-old does not measure a Windows.old that is a junction' {
+        Remove-Item -LiteralPath $script:old -Recurse -Force
+        $elsewhere = Join-Path $TestDrive ('elsewhere-' + [guid]::NewGuid().ToString('N'))
+        New-TestFile -Path (Join-Path $elsewhere 'x') -Size 50
+        New-Item -ItemType Junction -Path $script:old -Value $elsewhere | Out-Null
+
+        $result = Invoke-ResikTargetAnalysis -Target (New-ResikPreviousWindowsTarget)
+        $result.Message | Should -BeExactly 'There is no previous Windows installation.'
+        [System.IO.Directory]::Delete($script:old)
+    }
+
+    It 'windows-setup-files gives no estimate and selects both setup items' {
+        $target = New-ResikWindowsSetupTarget
+        $analysis = Invoke-ResikTargetAnalysis -Target $target
+        $analysis.Status | Should -BeExactly 'AnalysisOnly'
+        $null -eq $analysis.EstimatedBytes | Should -BeTrue
+
+        $result = Invoke-ResikTargetCleanup -Target $target
+        $result.Status | Should -BeExactly 'Success'
+        $null -eq $result.MeasuredBytes | Should -BeTrue
+        @($script:written | Where-Object { $_ -like '*=2' }) | Should -Be @('reg:setup=2', 'reg:logs=2')
+    }
+
     It 'is detected when only one of several items exists, and runs that one' {
         $script:handlers = @($script:handlers | Where-Object { $_.Name -ne 'System error minidump files' })
         (Invoke-ResikTargetAnalysis -Target (New-ResikMemoryDumpTarget)).Status | Should -BeExactly 'AnalysisOnly'
@@ -588,11 +626,12 @@ Describe 'memory-dumps target' {
         @($script:written | Where-Object { $_ -like '*=2' }) | Should -Be @('reg:dump=2')
     }
 
-    It 'is report-only without administrator rights' {
+    It 'the new Disk Cleanup targets are report-only without administrator rights' {
         Mock Test-ResikAdministrator { $false }
-        $target = New-ResikMemoryDumpTarget
-        $target.Clean | Should -BeNullOrEmpty
-        (Invoke-ResikTargetAnalysis -Target $target).Message | Should -BeLike 'Needs administrator rights*'
+        foreach ($target in @((New-ResikMemoryDumpTarget), (New-ResikPreviousWindowsTarget), (New-ResikWindowsSetupTarget))) {
+            $target.Clean | Should -BeNullOrEmpty
+            (Invoke-ResikTargetAnalysis -Target $target).Message | Should -BeLike 'Needs administrator rights*'
+        }
     }
 }
 

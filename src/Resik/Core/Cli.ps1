@@ -49,15 +49,16 @@ also say yes to every later question about a folder, IDE version, or reset.
 --force skips only the first question. With --non-interactive, or when
 input is redirected, cleanup requires --force.
 
-recycle-bin, screenshots, edge-profile, scoop-persist, and jetbrains-leftovers
-delete files that cannot be recovered and are never chosen by --all or by
-"select all"; neither are the *-service-workers browser parts. edge-profile,
+recycle-bin, screenshots, windows-old, edge-profile, scoop-persist, and
+jetbrains-leftovers delete files that cannot be recovered and are never chosen
+by --all or by "select all"; neither are the *-service-workers browser parts.
+edge-profile,
 scoop-persist, and jetbrains-leftovers ask before deleting, even with --force
 (unless you answered a), and remove nothing without a terminal.
 Browser, app, and IDE targets ask to close the browser or app when it is
 running, even after a; without a terminal they are skipped.
-windows-update, windows-logs, defender, error-reports, and memory-dumps need
-administrator rights, and temp-files
+windows-update, windows-logs, defender, error-reports, memory-dumps,
+windows-setup-files, and windows-old need administrator rights, and temp-files
 includes %WINDIR%\Temp only with them; Resik never elevates itself.
 "@
 }
