@@ -95,3 +95,41 @@ function New-ResikNuGetTarget {
         -Analyze { Invoke-ResikNuGetAnalysis } `
         -Clean { Invoke-ResikNuGetCleanup }
 }
+
+# Old NuGet package cache target (nuget-legacy): %LOCALAPPDATA%\NuGet\Cache, used
+# by NuGet 3.5 and earlier. Its command, "nuget locals packages-cache -clear",
+# exists only in those versions, so Resik deletes the *.nupkg files directly in
+# the folder itself. Current NuGet versions do not use it.
+
+function Get-ResikNuGetLegacyCachePath {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+    Join-Path (Get-ResikLocalAppDataPath) 'NuGet\Cache'
+}
+
+function Get-ResikNuGetLegacyLocation {
+    [CmdletBinding()]
+    param()
+    $path = Get-ResikCheckedAppRoot -Root (Get-ResikNuGetLegacyCachePath) -AppName 'the old NuGet cache'
+    New-ResikAgedFileLocation -Path $path -Before (Get-Date) -Include @('*.nupkg')
+}
+
+function Invoke-ResikNuGetLegacyAnalysis {
+    $size = Measure-ResikAgedFileLocation -Location @(Get-ResikNuGetLegacyLocation)
+    [pscustomobject]@{ EstimatedBytes = $size.Bytes; Details = "$(Get-ResikNuGetLegacyCachePath) ($($size.Files) packages)" }
+}
+
+function New-ResikNuGetLegacyTarget {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Creates an in-memory object only.')]
+    [CmdletBinding()]
+    param()
+
+    New-ResikTarget -Id 'nuget-legacy' -Name 'Old NuGet package cache' -Category Developer -RiskLevel Low `
+        -Description ('Deletes packages in %LOCALAPPDATA%\NuGet\Cache, the download cache of NuGet 3.5 and earlier. ' +
+            'Current NuGet versions do not use it, and older ones download packages again when needed.') `
+        -Detect { Invoke-ResikAppRootDetection -Root (Get-ResikNuGetLegacyCachePath) -AppName 'old NuGet cache' } `
+        -Analyze { Invoke-ResikNuGetLegacyAnalysis } `
+        -Clean { Invoke-ResikMeasuredAgedDeletion -Location @(Get-ResikNuGetLegacyLocation) -Label 'the old NuGet cache' }
+}

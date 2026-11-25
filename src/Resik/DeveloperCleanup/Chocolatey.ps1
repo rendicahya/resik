@@ -62,7 +62,7 @@ function New-ResikChocolateyTarget {
     [CmdletBinding()]
     param()
 
-    New-ResikTarget -Id 'choco' -Name 'Chocolatey HTTP cache' -Category Developer -RiskLevel Low `
+    New-ResikTarget -Id 'choco' -Name 'Chocolatey HTTP cache' -Category Developer -RiskLevel Low -Group 'Chocolatey' `
         -Description ('Removes cached package-source responses from your Chocolatey HTTP cache by running ' +
             '"choco cache remove". Installed packages are not touched. The system-wide cache needs administrator ' +
             'rights and is not cleaned. Chocolatey does not report sizes, so none are shown.') `

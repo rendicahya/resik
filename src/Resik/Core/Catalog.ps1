@@ -55,7 +55,13 @@ function Get-ResikTargetCatalog {
     New-ResikScoopCacheTarget
     New-ResikScoopPersistTarget
     New-ResikChocolateyTarget
+    New-ResikChocolateyDownloadTarget
+    New-ResikChocolateyLogTarget
+    New-ResikChocolateyLeftoverTarget
+    New-ResikChocolateyShimTarget
+    New-ResikChocolateyInstallerTarget
     New-ResikNuGetTarget
+    New-ResikNuGetLegacyTarget
     New-ResikJetBrainsLeftoverTarget
     New-ResikNetBeansTarget
     # Analysis only: these report sizes and are never cleaned.

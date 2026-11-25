@@ -63,6 +63,7 @@ function Get-ResikSourceFile {
     'DeveloperCleanup\Dart.ps1'
     'DeveloperCleanup\Scoop.ps1'
     'DeveloperCleanup\Chocolatey.ps1'
+    'DeveloperCleanup\ChocolateyFiles.ps1'
     'DeveloperCleanup\NuGet.ps1'
     'DeveloperCleanup\Conda.ps1'
     'DeveloperCleanup\HuggingFace.ps1'

@@ -72,8 +72,8 @@ Up/Down move   Space or click select   A all   N none   Enter confirm   Q cancel
   Selected: 3 targets, about 3.3 GB
 ```
 
-Targets that can be cleaned come first, largest first. A browser's parts are
-listed together under its name; selecting the name selects all of its parts
+Targets that can be cleaned come first, largest first. A browser's parts (and
+Chocolatey's) are listed together under its name; selecting the name selects all of its parts
 except the ones never chosen by "select all" (`[~]` means some are selected).
 Clicking a row selects it like Space, and the mouse wheel moves the cursor, in
 consoles that report mouse input (Windows Terminal and the classic console;
@@ -105,7 +105,7 @@ resik --version
 | `-h`, `--help` | Show usage and supported options. |
 | `-v`, `--version` | Show the Resik version. |
 | `-n`, `--dry-run` | Analyze targets without changing anything. With the picker, pick what to analyze. |
-| `-a`, `--all` | Select all targets except `recycle-bin`, `screenshots`, `edge-profile`, the `*-service-workers` browser parts, `scoop-persist`, and `jetbrains-leftovers`, without the picker. |
+| `-a`, `--all` | Select all targets except `recycle-bin`, `screenshots`, `edge-profile`, the `*-service-workers` browser parts, `choco-installers`, `scoop-persist`, and `jetbrains-leftovers`, without the picker. |
 | `-o`, `--only <ids>` | Select specific target IDs (comma-separated), without the picker. |
 | `--non-interactive` | Never prompt. Requires `--all` or `--only`, and `--force` to clean. |
 | `--report-path <path>` | Write a JSON report. Not implemented yet; rejected with an error. |
@@ -351,9 +351,15 @@ folders (or folders containing them), or symbolic links and junctions.
 | `scoop-apps` | Old versions of installed Scoop apps | `scoop cleanup *` | Low |
 | `scoop-cache` | Installers in Scoop's download cache | `scoop cache rm *` | Low |
 | `choco` | Your Chocolatey HTTP cache | `choco cache remove --yes` | Low |
+| `choco-downloads` | Installers Chocolatey downloaded and unpacked (`%TEMP%\chocolatey`) | Resik deletes the files | Low |
+| `choco-logs` | Rotated Chocolatey logs | Resik deletes the old logs | Low |
+| `choco-leftovers` | Failed packages, backups from interrupted upgrades, records of package versions no longer installed, and `*.old` files from Chocolatey's own upgrades | Resik deletes the files | Medium |
+| `choco-shims` | Chocolatey shims whose program no longer exists | Resik deletes the shims | Low |
+| `choco-installers` | Installers and archives inside installed Chocolatey packages that their install script already used | Resik deletes the files | Medium |
 | `nuget` | The NuGet HTTP cache | `dotnet nuget locals http-cache --clear` | Low |
+| `nuget-legacy` | The package cache of NuGet 3.5 and earlier (`%LOCALAPPDATA%\NuGet\Cache`) | Resik deletes the `*.nupkg` files | Low |
 
-What these remove is downloaded again when needed. Details:
+What the caches hold is downloaded again when needed. Details:
 
 - **uv:** the location comes from `uv cache dir` (which honors `UV_CACHE_DIR`
   and uv configuration), and must contain the `CACHEDIR.TAG` file uv writes.
@@ -444,6 +450,32 @@ What these remove is downloaded again when needed. Details:
 - **choco:** without administrator rights (Resik never elevates) only your user
   HTTP cache is cleaned. Chocolatey reports item counts but not sizes or the
   cache location, so Resik shows no size for it. Installed packages are not touched.
+- **choco-downloads:** needs no administrator rights; with them, it includes
+  `%WINDIR%\Temp\chocolatey`. If Chocolatey's `cacheLocation` setting moves the
+  downloads, Resik only reports their size, because a folder you chose could
+  hold other files.
+- **choco-logs, choco-leftovers, choco-shims, choco-installers** need
+  administrator rights; without them they are report-only. Nothing is deleted
+  while Chocolatey is running, and installed packages keep their metadata:
+  `.nupkg`, `.ignore`, and `<name>.zip.txt` files, licenses, and
+  `chocolatey.config.backup` are never deleted, because Chocolatey uses them
+  later (or they are too small to matter).
+- **choco-logs:** only `chocolatey.<n>.log` and `choco.summary.<n>.log`; the
+  current logs are kept.
+- **choco-leftovers:** empties `lib-bad` and `lib-bkp`, and deletes the
+  `.chocolatey\<id>.<version>` records that match no package version in
+  `choco list` (Chocolatey 2 or later; otherwise the records are kept). A
+  record Resik cannot tell apart for sure is kept. You can no longer put a
+  failed package back by hand; hence Medium risk.
+- **choco-shims:** a shim is asked for its program with `--shimgen-help`, which
+  does not start it; files not marked as Chocolatey shims are never run. A shim
+  whose program is on a drive that is not connected is kept.
+- **choco-installers:** only `.7z`, `.zip`, `.rar`, `.gz`, `.tar`, `.sfx`,
+  `.msi`, `.msu`, and `.msp` files directly in a package's `tools` folder that
+  `chocolateyInstall.ps1` names and passes to a Chocolatey install helper. A
+  file is kept when another script in the package mentions its extension, when
+  the install did not finish, and when the package has a `.SkipReducer` file.
+  Never chosen by `--all` or "select all": a repair may ask for the installer.
 - **nuget:** needs a .NET SDK. Only the HTTP cache is cleared. The
   global-packages folder is never cleared, because projects use packages
   directly from it, and neither is NuGet's temp folder, which coordinates
@@ -585,7 +617,8 @@ src/Resik/
                           Npm, Pnpm, Yarn, Bun, NodeGyp, Deno, Composer, Go,
                           Dart, NetBeans,
                           Playwright, Scoop,
-                          Chocolatey, NuGet, JetBrains (the analysis-only
+                          Chocolatey, ChocolateyFiles (the other choco-*),
+                          NuGet, JetBrains (the analysis-only
                           jetbrains and jetbrains-leftovers), and the
                           analysis-only Gradle, Maven
   Reporting/
